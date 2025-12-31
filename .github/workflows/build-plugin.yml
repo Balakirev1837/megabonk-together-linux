@@ -43,17 +43,27 @@ jobs:
           mkdir -p artifacts
           ZIP="artifacts/${ARCHIVE_NAME}"
 
-          echo "Zipping DLLs from $OUTPUT_DIR into $ZIP"
+          echo "Zipping DLLs and BATs from $OUTPUT_DIR into $ZIP"
 
           shopt -s nullglob || true
-          DLLS=("$OUTPUT_DIR"/*.dll)
-          if [ ${#DLLS[@]} -eq 0 ]; then
-            echo "No dll files found in $OUTPUT_DIR"
+
+          FILES=()
+
+          for f in "$OUTPUT_DIR"/*.dll; do
+            [ -e "$f" ] && FILES+=("$f")
+          done
+
+          for f in "$OUTPUT_DIR"/*.bat; do
+            [ -e "$f" ] && FILES+=("$f")
+          done
+
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No DLL or BAT files found to zip in $OUTPUT_DIR"
             ls -la "$OUTPUT_DIR" || true
             exit 1
           fi
 
-          zip -j "$ZIP" "${DLLS[@]}"
+          zip -j "$ZIP" "${FILES[@]}"
           ls -la artifacts
         env:
           ARCHIVE_NAME: ${{ env.ARCHIVE_NAME }}
