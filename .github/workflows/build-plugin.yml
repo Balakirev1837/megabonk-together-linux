@@ -43,7 +43,7 @@ jobs:
           mkdir -p artifacts
           ZIP="artifacts/${ARCHIVE_NAME}"
 
-          echo "Zipping DLLs and BATs from $OUTPUT_DIR into $ZIP"
+          echo "Zipping DLLs, PDBs and BATs from $OUTPUT_DIR into $ZIP"
 
           shopt -s nullglob || true
 
@@ -53,12 +53,16 @@ jobs:
             [ -e "$f" ] && FILES+=("$f")
           done
 
+          for f in "$OUTPUT_DIR"/*.pdb; do
+            [ -e "$f" ] && FILES+=("$f")
+          done
+
           for f in "$OUTPUT_DIR"/*.bat; do
             [ -e "$f" ] && FILES+=("$f")
           done
 
           if [ ${#FILES[@]} -eq 0 ]; then
-            echo "No DLL or BAT files found to zip in $OUTPUT_DIR"
+            echo "No DLL, PDB or BAT files found to zip in $OUTPUT_DIR"
             ls -la "$OUTPUT_DIR" || true
             exit 1
           fi
