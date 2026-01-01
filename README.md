@@ -40,12 +40,12 @@ More info at [Notable Network Changes](./NETPLAY_CHANGES.md)
 
 This mod has only been developed and tested on windows, probably won't work on other platform (Is the game can even be run on Linux/Mac even ?)
 
-Also this mod was developed for the 1.0.49 version, meaning it will probably break when an official major update drop .
+Also this mod was developed for the 1.0.49 version (ok let me rant a bit, it was developed on previous update but Graveyard update broke some major stuff, i was a bit mad but its okay now, i fixed all the stuff), meaning it will probably break when an official major update drop .
 
 > [!NOTE]  
 > Before starting, i suggest to make a backup of your current save file just in case.
-> The game save is somewhere at {user}/AppData/LocalLow/Ved/Megabonk/Saves/CloudDir/{some steam id guess}
-> You can also just copy all at {user}/AppData/LocalLow/Ved/Megabonk if not sure
+> The game save is somewhere at `{user}/AppData/LocalLow/Ved/Megabonk/Saves/CloudDir/{some steam id guess}`
+> You can also just copy all at `{user}/AppData/LocalLow/Ved/Megabonk` if not sure
 > Make sure to copy your save somewhere in case you need to restore it back for some reason
 
 This mod run with [BepInEX 6 Bleeding Edge Build](https://builds.bepinex.dev/projects/bepinex_be) (tested on the current latest #752):

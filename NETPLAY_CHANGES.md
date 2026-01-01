@@ -33,7 +33,7 @@ You get i-frames when leveling up/getting a reward/openning a chest. This is to 
 
 ## Disabled Save/Steam interaction
 
-The game naturally save progression and update your achievement. The game is not really meant to be player online so all of the save/steam interaction is prohibited when playing a netplay game.
+The game naturally save progression and update your achievement. The game is not really meant to be played online so all of the save/steam interaction is prohibited when playing a netplay game.
 Same thing with uploading your score to the leaderbord, you would get banned anyway , so let's not do that 😅
 
 ## Custom game balance
