@@ -45,7 +45,9 @@ Also this mod was developed for the 1.0.49 version (ok let me rant a bit, it was
 > [!NOTE]  
 > Before starting, i suggest to make a backup of your current save file just in case.
 > The game save is somewhere at `{user}/AppData/LocalLow/Ved/Megabonk/Saves/CloudDir/{some steam id guess}`
+
 > You can also just copy all at `{user}/AppData/LocalLow/Ved/Megabonk` if not sure
+
 > Make sure to copy your save somewhere in case you need to restore it back for some reason
 
 This mod run with [BepInEX 6 Bleeding Edge Build](https://builds.bepinex.dev/projects/bepinex_be) (tested on the current latest #752):
@@ -54,7 +56,9 @@ Start by downloading the BepInex loader [BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.7
 
 > [!NOTE]  
 > We specifically target the IL2CPP version (.IL2CPP) in the BepInEx build page and also the windows (-win) and the 64 bits (-x64) version of BepInex.
+
 > Not sure if i will upgrade this page every new BepInEx update this how you know what version you should get
+
 > Also i dont know if 64 bits is tied with how the game was built or your system , if the 64 bits version is not working, i guess you should try the 32 bits (x86) version (something like `BepInEx-Unity.IL2CPP-win-x86-6.0.0-be`)
 
 - Launch the game first at least one time to confirm BepInEx is working (Wait for the main menu as BepInEx need to make some dummy dll). Yous should see a terminal opened along side with the game with some logs in it
