@@ -40,18 +40,17 @@ namespace MegabonkTogether.Patches
 
                 Task.Run(async () =>
                 {
-                    if (Plugin.Instance.PlayTogetherButton == null)
-                    {
-                        return;
-                    }
-
-                    Plugin.Instance.PlayTogetherButton.enabled = false;
                     await autoUpdaterService.CheckAndUpdate();
-                    Plugin.Instance.PlayTogetherButton.enabled = true;
 
-                    if (autoUpdaterService != null && autoUpdaterService.IsAnUpdateAvailable())
+                    if (autoUpdaterService.IsAnUpdateAvailable())
                     {
                         Plugin.ShowUpdateAvailableModal();
+
+                        if (Plugin.Instance.PlayTogetherButton == null)
+                        {
+                            return;
+                        }
+                        Plugin.Instance.PlayTogetherButton.enabled = false;
                     }
                 });
             }
