@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -210,6 +211,8 @@ namespace MegabonkTogether.Common
 
                 await DownloadFile(downloadUrl, downloadPath);
 
+                GenerateUpdaterBatchFile(pluginDirectory, release.TagName);
+
                 logger.LogInfo($"Update {release.TagName} downloaded. Quit the game to apply.");
 
                 return true;
@@ -218,6 +221,147 @@ namespace MegabonkTogether.Common
             {
                 logger.LogError($"Error preparing update: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// I think mod site are flagging the bat, so we will generate it on the fly and they can leave me alone
+        /// </summary>
+        private void GenerateUpdaterBatchFile(string pluginDirectory, string version)
+        {
+            try
+            {
+                var updaterPath = Path.Combine(pluginDirectory, "ApplyUpdate.bat");
+                var batchContent = new StringBuilder();
+
+                batchContent.AppendLine("@echo off");
+                batchContent.AppendLine("setlocal enabledelayedexpansion");
+                batchContent.AppendLine();
+                batchContent.AppendLine("REM ========================================");
+                batchContent.AppendLine("REM  MegabonkTogether Auto-Updater");
+                batchContent.AppendLine("REM  Applies updates after game exits");
+                batchContent.AppendLine("REM ========================================");
+                batchContent.AppendLine();
+                batchContent.AppendLine("set GAME_PID=%1");
+                batchContent.AppendLine("set PLUGIN_DIR=%2");
+                batchContent.AppendLine();
+                batchContent.AppendLine("if \"%GAME_PID%\"==\"\" (");
+                batchContent.AppendLine("    echo ERROR: Missing game process ID");
+                batchContent.AppendLine("    echo Usage: ApplyUpdate.bat [gameProcessId] [pluginDirectory]");
+                batchContent.AppendLine("    pause");
+                batchContent.AppendLine("    exit /b 1");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine();
+                batchContent.AppendLine("if \"%PLUGIN_DIR%\"==\"\" (");
+                batchContent.AppendLine("    echo ERROR: Missing plugin directory");
+                batchContent.AppendLine("    echo Usage: ApplyUpdate.bat [gameProcessId] [pluginDirectory]");
+                batchContent.AppendLine("    pause");
+                batchContent.AppendLine("    exit /b 1");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine();
+                batchContent.AppendLine("cls");
+                batchContent.AppendLine("echo ========================================");
+                batchContent.AppendLine($"echo   MegabonkTogether Auto-Updater v{version}");
+                batchContent.AppendLine("echo ========================================");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine();
+                batchContent.AppendLine("REM Wait for exit");
+                batchContent.AppendLine("echo Waiting for game process (PID: %GAME_PID%) to exit...");
+                batchContent.AppendLine(":WAIT_LOOP");
+                batchContent.AppendLine("tasklist /FI \"PID eq %GAME_PID%\" 2>NUL | find \"%GAME_PID%\" >NUL");
+                batchContent.AppendLine("if !ERRORLEVEL! EQU 0 (");
+                batchContent.AppendLine("    timeout /t 1 /nobreak >NUL");
+                batchContent.AppendLine("    goto WAIT_LOOP");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine("echo Game process exited successfully.");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine();
+                batchContent.AppendLine("echo Waiting a bit for file locks to release...");
+                batchContent.AppendLine("timeout /t 2 /nobreak >NUL");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine();
+                batchContent.AppendLine("set UPDATE_FILE=");
+                batchContent.AppendLine("for %%F in (\"%PLUGIN_DIR%\\.update_download_*\") do (");
+                batchContent.AppendLine("    set UPDATE_FILE=%%~fF");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine();
+                batchContent.AppendLine("if \"%UPDATE_FILE%\"==\"\" (");
+                batchContent.AppendLine("    echo ERROR: No update file found");
+                batchContent.AppendLine("    pause");
+                batchContent.AppendLine("    exit /b 1");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine();
+                batchContent.AppendLine("echo Found update file: %UPDATE_FILE%");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine();
+                batchContent.AppendLine("REM backup");
+                batchContent.AppendLine("set PLUGIN_DLL=%PLUGIN_DIR%\\MegabonkTogether.Plugin.dll");
+                batchContent.AppendLine("set BACKUP_DLL=%PLUGIN_DLL%.backup");
+                batchContent.AppendLine();
+                batchContent.AppendLine("if exist \"%PLUGIN_DLL%\" (");
+                batchContent.AppendLine("    echo Creating backup...");
+                batchContent.AppendLine("    copy /Y \"%PLUGIN_DLL%\" \"%BACKUP_DLL%\" >NUL");
+                batchContent.AppendLine("    if !ERRORLEVEL! NEQ 0 (");
+                batchContent.AppendLine("        echo ERROR: Failed to create backup");
+                batchContent.AppendLine("        pause");
+                batchContent.AppendLine("        exit /b 1");
+                batchContent.AppendLine("    )");
+                batchContent.AppendLine("    echo Backup created.");
+                batchContent.AppendLine("    echo.");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine();
+                batchContent.AppendLine("echo Applying update...");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine();
+                batchContent.AppendLine("echo %UPDATE_FILE% | find /i \".zip\" >NUL");
+                batchContent.AppendLine("if !ERRORLEVEL! EQU 0 (");
+                batchContent.AppendLine("    echo Extracting ZIP archive...");
+                batchContent.AppendLine("    ");
+                batchContent.AppendLine("    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"$zipPath = '%UPDATE_FILE%'; $destPath = '%PLUGIN_DIR%'; Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath); try { foreach ($entry in $zip.Entries) { if ($entry.Name -match '\\.dll$' -or $entry.Name -match '\\.exe$') { $targetPath = Join-Path $destPath $entry.Name; [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $targetPath, $true); Write-Host ('  Extracted: ' + $entry.Name) } } } finally { $zip.Dispose() }\"");
+                batchContent.AppendLine("    ");
+                batchContent.AppendLine("    if !ERRORLEVEL! NEQ 0 (");
+                batchContent.AppendLine("        echo ERROR: Failed to extract ZIP");
+                batchContent.AppendLine("        goto RESTORE_BACKUP");
+                batchContent.AppendLine("    )");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine();
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine("echo Cleaning up...");
+                batchContent.AppendLine("del /F /Q \"%UPDATE_FILE%\" 2>NUL");
+                batchContent.AppendLine("if exist \"%BACKUP_DLL%\" del /F /Q \"%BACKUP_DLL%\" 2>NUL");
+                batchContent.AppendLine();
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine("echo ========================================");
+                batchContent.AppendLine("echo   Update applied successfully!");
+                batchContent.AppendLine("echo ========================================");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine("echo You can now restart the game.");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine("echo This window will close in 5 seconds...");
+                batchContent.AppendLine("timeout /t 5 /nobreak >NUL");
+                batchContent.AppendLine("exit /b 0");
+                batchContent.AppendLine();
+                batchContent.AppendLine(":RESTORE_BACKUP");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine("echo Restoring backup...");
+                batchContent.AppendLine("if exist \"%BACKUP_DLL%\" (");
+                batchContent.AppendLine("    copy /Y \"%BACKUP_DLL%\" \"%PLUGIN_DLL%\" >NUL");
+                batchContent.AppendLine("    echo Backup restored.");
+                batchContent.AppendLine(") else (");
+                batchContent.AppendLine("    echo WARNING: No backup found to restore");
+                batchContent.AppendLine(")");
+                batchContent.AppendLine("echo.");
+                batchContent.AppendLine("echo Update failed. Press any key to exit...");
+                batchContent.AppendLine("pause >NUL");
+                batchContent.AppendLine("exit /b 1");
+
+                File.WriteAllText(updaterPath, batchContent.ToString());
+                logger.LogInfo($"Generated updater batch file!");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Error generating updater batch file: {ex.Message}");
+                throw;
             }
         }
 
