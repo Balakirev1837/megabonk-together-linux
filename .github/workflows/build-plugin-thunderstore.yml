@@ -51,7 +51,7 @@ jobs:
           schemaVersion = "0.0.1"
 
           [package]
-          namespace = "Fcornaire"
+          namespace = "DShad"
           name = "MegabonkTogether"
           versionNumber = "${{ env.VERSION }}"
           description = "Play Megabonk over netplay!"
