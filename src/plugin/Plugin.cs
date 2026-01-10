@@ -30,7 +30,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.Localization;
 using UnityEngine.UI;
 
 namespace MegabonkTogether
@@ -45,6 +44,7 @@ namespace MegabonkTogether
         public CameraSwitcher CameraSwitcher = null;
         public PlayTogetherButton PlayTogetherButton = null;
         public AchievementPopup AchievementPopup = null;
+        public NotificationQueueManager NotificationQueueManager = null;
         private MainMenu MainMenu = null;
         private MapEventsManager mapEventsManager = null;
         private MapEventsDesert mapEventsDesert = null;
@@ -117,6 +117,7 @@ namespace MegabonkTogether
             ClassInjector.RegisterTypeInIl2Cpp<UpdateAvailableModal>();
             ClassInjector.RegisterTypeInIl2Cpp<TargetSwitcher>();
             ClassInjector.RegisterTypeInIl2Cpp<InteractableReviver>();
+            ClassInjector.RegisterTypeInIl2Cpp<NotificationQueueManager>();
 
             var builder = new HostBuilder();
 
@@ -199,6 +200,10 @@ namespace MegabonkTogether
             var goCameraSwitcher = new GameObject("CameraSwitcher");
             GameObject.DontDestroyOnLoad(goCameraSwitcher);
             CameraSwitcher = goCameraSwitcher.AddComponent<CameraSwitcher>();
+
+            var goNotificationQueueManager = new GameObject("NotificationQueueManager");
+            GameObject.DontDestroyOnLoad(goNotificationQueueManager);
+            NotificationQueueManager = goNotificationQueueManager.AddComponent<NotificationQueueManager>();
         }
 
         public void AddPrefab(GameObject prefab)
@@ -302,6 +307,11 @@ namespace MegabonkTogether
                 if (gameObject != null)
                 {
                     AchievementPopup = gameObject.GetComponent<AchievementPopup>();
+
+                    if (AchievementPopup != null && NotificationQueueManager != null)
+                    {
+                        NotificationQueueManager.Initialize();
+                    }
                 }
             }
             return AchievementPopup;
@@ -323,30 +333,23 @@ namespace MegabonkTogether
             IEnumerable<string> descriptionArgs,
             RandomSfx sfx = null,
             EItem item = EItem.Key
-            )
+        )
         {
-            if (DataManager.Instance.itemData.TryGetValue(item, out var data))
+            if (Instance?.NotificationQueueManager == null)
             {
-                var achievementData = data.GetUnlockRequirement();
-                achievementData.localizedName = new LocalizedString() { TableReference = localizedName.tableReference, TableEntryReference = localizedName.tableEntryReference };
-                achievementData.localizedDescription = new LocalizedString()
-                {
-                    TableReference = localizedDescription.tableReference,
-                    TableEntryReference = localizedDescription.tableEntryReference
-                };
-
-                var localizationService = Plugin.Services.GetService<ILocalizationService>();
-                localizationService.EnqueueNextLocalizedDescription(descriptionArgs);
-
-                Plugin.Instance.GetAchievementPopup().OnAchievementUnlocked(achievementData);
-                if (sfx != null)
-                {
-                    AudioManager.Instance.PlaySfx(sfx.sounds[0]);
-                }
-                return true;
+                Log.LogWarning("NotificationQueueManager is not initialized");
+                return false;
             }
 
-            return false;
+            Instance.NotificationQueueManager.EnqueueNotification(
+                localizedName,
+                localizedDescription,
+                descriptionArgs,
+                sfx,
+                item
+            );
+
+            return true;
         }
 
         public static void GoToMainMenu()
