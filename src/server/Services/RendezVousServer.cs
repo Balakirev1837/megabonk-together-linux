@@ -52,6 +52,15 @@ namespace MegabonkTogether.Server.Services
         public DateTime EnqueuedAt;
     }
 
+    public class PendingRelayConnection
+    {
+        public uint ConnectionId;
+        public IPEndPoint RemoteEndPoint;
+        public bool IsHost;
+        public uint HostConnectionId;
+        public DateTime CreatedAt = DateTime.UtcNow;
+    }
+
     public interface IRendezVousServer
     {
         public void CleanRelaySession(uint connectionId);
@@ -70,6 +79,8 @@ namespace MegabonkTogether.Server.Services
         private readonly ConcurrentDictionary<uint, RelaySession> sessions = new();
         private readonly ConcurrentDictionary<NetPeer, RelayPeer> peerLookup = new();
 
+        private readonly ConcurrentDictionary<uint, PendingRelayConnection> pendingRelayConnections = new();
+
         private bool hasStarted = false;
 
         private const int RENDEZVOUS_PORT = 5678;
@@ -78,6 +89,7 @@ namespace MegabonkTogether.Server.Services
         private static readonly TimeSpan HOST_RETENTION = TimeSpan.FromMinutes(1);
         private static readonly TimeSpan PENDING_CLIENT_RETENTION = TimeSpan.FromSeconds(45);
         private static readonly TimeSpan PROCESSED_PAIR_RETENTION = TimeSpan.FromSeconds(45);
+        private static readonly TimeSpan PENDING_RELAY_RETENTION = TimeSpan.FromSeconds(30);
 
         public RendezVousServer(ILogger<RendezVousServer> logger)
         {
@@ -162,66 +174,26 @@ namespace MegabonkTogether.Server.Services
                 }
             };
 
-            natListener.NatIntroductionSuccess += (target, natType, token) =>
-            {
-                // Ignore on server side
-            };
+            //natListener.NatIntroductionSuccess += (target, natType, token) =>
+            //{
+            //    // Ignore on server side
+            //};
 
-            listener.PeerConnectedEvent += peer =>
-            {
-                try
-                {
-                    var ipEndPoint = new IPEndPoint(peer.Address, peer.Port);
-                    logger.LogInformation($"Peer connected for relay lookup: {ipEndPoint}");
+            //listener.PeerConnectedEvent += peer =>
+            //{
 
-                    var clientRelayPeer = sessions.Values
-                        .SelectMany(session => session.Clients.Values)
-                        .FirstOrDefault(relayInfo => relayInfo.EndPoint.Equals(ipEndPoint) && relayInfo.NetPeer == null);
-
-                    if (clientRelayPeer != null)
-                    {
-                        logger.LogInformation($"  -> Identified as CLIENT relay for connection {clientRelayPeer.ConnectionId}");
-                        clientRelayPeer.NetPeer = peer;
-                        peerLookup[peer] = clientRelayPeer;
-                        return;
-                    }
-
-                    var hostSession = sessions.Values
-                        .FirstOrDefault(session => session.Host.EndPoint.Equals(ipEndPoint) && session.Host.NetPeer == null);
-
-                    if (hostSession != null)
-                    {
-                        logger.LogInformation($"  -> Identified as HOST relay for connection {hostSession.Host.ConnectionId}");
-                        var hostRelayPeer = hostSession.Host;
-                        hostRelayPeer.NetPeer = peer;
-                        peerLookup[peer] = hostRelayPeer;
-
-                        while (hostSession.PendingToHost.TryDequeue(out var pending))
-                        {
-                            logger.LogInformation($"  -> Sending pending message to HOST relay queued at {pending.EnqueuedAt} !!!");
-                            peer.Send(pending.Payload, pending.DeliveryMethod);
-                        }
-                        return;
-                    }
-
-                    logger.LogWarning($"Unexpected peer connected: {ipEndPoint} - no matching relay session found");
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, $"Error handling peer connection: {peer.Address}");
-                }
-            };
+            //};
 
             listener.ConnectionRequestEvent += request =>
             {
                 try
                 {
-                    logger.LogInformation($"Connection request from {request.RemoteEndPoint}, accepting");
-                    request.Accept();
+                    HandlingConnectionRequest(request);
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, $"Error handling connection request from {request.RemoteEndPoint}");
+                    request.Reject();
                 }
             };
 
@@ -230,7 +202,11 @@ namespace MegabonkTogether.Server.Services
             {
                 try
                 {
-                    if (!peerLookup.TryGetValue(peer, out var relayPeer)) return;
+                    if (!peerLookup.TryGetValue(peer, out var relayPeer))
+                    {
+                        HandlingRelayBinding(peer, reader);
+                        return;
+                    }
 
                     var session = relayPeer.Session;
                     var data = reader.GetRemainingBytes();
@@ -309,6 +285,157 @@ namespace MegabonkTogether.Server.Services
             else
             {
                 logger.LogInformation($"UDP Rendezvous server started on port {RENDEZVOUS_PORT}");
+            }
+        }
+
+        private void HandlingConnectionRequest(ConnectionRequest request)
+        {
+            logger.LogInformation($"Connection request from {request.RemoteEndPoint}");
+
+            var token = request.Data.GetString();
+            logger.LogInformation($"    -> Connection token: {token}");
+
+            string[] parts = token.Split('|');
+            if (parts.Length < 3)
+            {
+                logger.LogWarning($"    -> Invalid token format: {token}, rejecting connection");
+                request.Reject();
+                return;
+            }
+
+            var remoteConnectionId = parts[0];
+            var remoteEndpoint = parts[1];
+            var mode = parts[2];
+
+            if (mode != "RELAY")
+            {
+                logger.LogWarning($"    -> Invalid mode: {mode}, expected RELAY, rejecting connection");
+                request.Reject();
+                return;
+            }
+
+            if (!uint.TryParse(remoteConnectionId, out uint connectionId))
+            {
+                logger.LogWarning($"    -> Invalid connection ID: {remoteConnectionId}, rejecting connection");
+                request.Reject();
+                return;
+            }
+
+            RelaySession targetSession = null;
+            bool isHost = false;
+            uint hostConnectionId = 0;
+
+            if (sessions.TryGetValue(connectionId, out var session))
+            {
+                targetSession = session;
+                isHost = true;
+                hostConnectionId = connectionId;
+                logger.LogInformation($"    -> Connection is for HOST {connectionId}");
+            }
+            else
+            {
+                foreach (var sess in sessions.Values)
+                {
+                    if (sess.Clients.ContainsKey(connectionId))
+                    {
+                        targetSession = sess;
+                        isHost = false;
+                        hostConnectionId = sess.HostConnectionId;
+                        logger.LogInformation($"    -> Connection is for CLIENT {connectionId} in session {hostConnectionId}");
+                        break;
+                    }
+                }
+            }
+
+            if (targetSession == null)
+            {
+                logger.LogWarning($"  -> No session found for connection ID {connectionId}, rejecting connection");
+                request.Reject();
+                return;
+            }
+
+            pendingRelayConnections[connectionId] = new PendingRelayConnection
+            {
+                ConnectionId = connectionId,
+                RemoteEndPoint = request.RemoteEndPoint,
+                IsHost = isHost,
+                HostConnectionId = hostConnectionId
+            };
+
+            logger.LogInformation($"    -> Accepting connection from {request.RemoteEndPoint} for {(isHost ? "HOST" : "CLIENT")} {connectionId}");
+            request.Accept();
+        }
+
+        private void HandlingRelayBinding(NetPeer peer, NetDataReader reader)
+        {
+            var bytes = reader.GetRemainingBytes();
+            var parseReader = new NetDataReader(bytes);
+            var token = parseReader.GetString();
+
+            if (string.IsNullOrEmpty(token))
+            {
+                return;
+            }
+
+            string[] parts = token.Split('|');
+            if (parts.Length < 2)
+            {
+                logger.LogWarning($"    -> Invalid token format: {token}");
+                return;
+            }
+
+            string mode = parts[1];
+
+            if (mode != "RELAY_BIND")
+            {
+                logger.LogWarning($"    -> Invalid mode: {mode}, expected RELAY_BIND");
+                return;
+            }
+
+            logger.LogInformation($"Binding relay connection from {peer.Address}:{peer.Port}");
+
+            if (!uint.TryParse(parts[0], out var connectionId))
+            {
+                logger.LogWarning($"    -> Invalid connection ID format: {parts[0]}");
+                return;
+            }
+
+            if (!pendingRelayConnections.TryRemove(connectionId, out var pending))
+            {
+                logger.LogWarning($"    -> No pending relay for {connectionId}");
+                return;
+            }
+
+            if (!sessions.TryGetValue(pending.HostConnectionId, out var pendingSession))
+            {
+                logger.LogWarning($"    -> Session for host {pending.HostConnectionId} not found!");
+                return;
+            }
+
+            if (pending.IsHost)
+            {
+                logger.LogInformation($"    -> Registering HOST {pending.ConnectionId} for relay");
+                pendingSession.Host.NetPeer = peer;
+                peerLookup[peer] = pendingSession.Host;
+
+                while (pendingSession.PendingToHost.TryDequeue(out var pendingMsg))
+                {
+                    logger.LogInformation($"    -> Sending pending message to HOST relay queued at {pendingMsg.EnqueuedAt}");
+                    peer.Send(pendingMsg.Payload, pendingMsg.DeliveryMethod);
+                }
+            }
+            else
+            {
+                logger.LogInformation($"    -> Registering CLIENT {pending.ConnectionId} for relay");
+                if (pendingSession.Clients.TryGetValue(pending.ConnectionId, out var clientPeer))
+                {
+                    clientPeer.NetPeer = peer;
+                    peerLookup[peer] = clientPeer;
+                }
+                else
+                {
+                    logger.LogWarning($"    -> Client {pending.ConnectionId} not found in session!");
+                }
             }
         }
 
@@ -482,6 +609,7 @@ namespace MegabonkTogether.Server.Services
             int hostsRemoved = 0;
             int pendingClientsRemoved = 0;
             int pairsRemoved = 0;
+            int pendingRelayConnectionsRemoved = 0;
 
             foreach (var kvp in registeredHosts)
             {
@@ -543,11 +671,23 @@ namespace MegabonkTogether.Server.Services
                 }
             }
 
-            if (hostsRemoved > 0 || pendingClientsRemoved > 0 || pairsRemoved > 0)
+            foreach (var kvp in pendingRelayConnections.ToList())
+            {
+                if (now - kvp.Value.CreatedAt > PENDING_RELAY_RETENTION)
+                {
+                    if (pendingRelayConnections.TryRemove(kvp.Key, out _))
+                    {
+                        pendingRelayConnectionsRemoved++;
+                        logger.LogInformation($"Removed stale pending relay connection for {kvp.Value.ConnectionId}");
+                    }
+                }
+            }
+
+            if (hostsRemoved > 0 || pendingClientsRemoved > 0 || pairsRemoved > 0 || pendingRelayConnectionsRemoved > 0)
             {
                 logger.LogInformation($"RendezVous Server Cleanup Report at {now}:");
-                logger.LogInformation($"    Cleanup complete: {hostsRemoved} hosts, {pendingClientsRemoved} pending clients, {pairsRemoved} processed pairs removed");
-                logger.LogInformation($"    Current state: {registeredHosts.Count} hosts, {pendingClients.Count} pending queues, {processedPairs.Count} processed pairs");
+                logger.LogInformation($"    Cleanup complete: {hostsRemoved} hosts, {pendingClientsRemoved} pending clients, {pairsRemoved} processed pairs, {pendingRelayConnectionsRemoved} pending connections removed");
+                logger.LogInformation($"    Current state: {registeredHosts.Count} hosts, {pendingClients.Count} pending queues, {processedPairs.Count} processed pairs, {pendingRelayConnections.Count} pending relay connections");
             }
         }
 

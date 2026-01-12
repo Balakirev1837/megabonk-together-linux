@@ -43,6 +43,11 @@ More info at [Notable Network Changes](./NETPLAY_CHANGES.md)
 <details>
 <summary>📋 Click to view full changelog</summary>
 
+### v2.0.1
+
+- 🎮 **Fixed button selection reset issue** in character window
+- 🔗 **Fixed some connection issues** in relay mode for some users
+
 ### v2.0.0
 
 - 🎉 **Added changelog system**: See what's new after each update!

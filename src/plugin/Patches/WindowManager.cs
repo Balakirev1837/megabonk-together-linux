@@ -82,8 +82,6 @@ namespace MegabonkTogether.Patches
 
             if (newWindow.name == "W_Character")
             {
-                ButtonManager.selectedButton2 = (newWindow as CharacterMenu).startBtn;
-
                 if (Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies)
                 {
                     var mainMenu = Plugin.Instance.GetMainMenu();
@@ -122,6 +120,12 @@ namespace MegabonkTogether.Patches
         [HarmonyPatch(nameof(WindowManager.Update))]
         public static void Update_Postix()
         {
+            if (ButtonManager.selectedButton2 == Plugin.Instance.PlayTogetherButton && WindowManager.activeWindow?.name == "W_Character")
+            {
+                Plugin.Log.LogInfo("Resetting selected button");
+                ButtonManager.selectedButton2 = WindowManager.activeWindow.allButtons.Count > 0 ? WindowManager.activeWindow.allButtons[0] : null;
+            }
+
             if (WindowManager.activeWindow?.name == "W_Character" && Plugin.Instance.Mode.Mode == NetworkModeType.Friendlies && Plugin.Instance.Mode.Role == Role.Host)
             {
                 if (playerManagerService.GetAllPlayers().Count() < 2)

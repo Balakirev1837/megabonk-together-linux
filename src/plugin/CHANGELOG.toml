@@ -6,6 +6,13 @@
 #     "Change 2 description",
 # ]
 
+
+[version."2.0.1"]
+changes = [
+    "Fixed (i hope) button selection reset issue in character window",
+    "Fixed some connection issues in relay mode for some users"
+]
+
 [version."2.0.0"]
 changes = [
     "Added changelog system: See what's new after each update!",
