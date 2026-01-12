@@ -230,6 +230,10 @@ namespace MegabonkTogether.Services
                     {
                         relayPeer = peer;
                     }
+
+                    var writer = new NetDataWriter();
+                    writer.Put($"{selfConnectionId}|RELAY_BIND");
+                    peer.Send(writer, DeliveryMethod.ReliableOrdered);
                 }
 
                 if (isHost == null)
@@ -331,7 +335,8 @@ namespace MegabonkTogether.Services
                         return;
                     }
 
-                    netManager.Connect(rdvServerHost, rdvServerPort, "RELAY");
+                    var connectionKey = $"{selfConnectionId.Value}|{remoteEndpoint}|RELAY";
+                    netManager.Connect(rdvServerHost, rdvServerPort, connectionKey);
                 }
             };
 

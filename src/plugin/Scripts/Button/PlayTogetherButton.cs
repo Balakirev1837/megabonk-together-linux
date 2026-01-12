@@ -1,5 +1,4 @@
-﻿using Assets.Scripts.Managers;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace MegabonkTogether.Scripts.Button
 {
@@ -15,7 +14,7 @@ namespace MegabonkTogether.Scripts.Button
 
         private void OnPlayTogetherClick()
         {
-            ButtonManager.selectedButton2 = this;
+            //ButtonManager.selectedButton2 = this;
 
             var networkMenuObj = new GameObject("NetworkMenuTab");
             Plugin.Instance.NetworkTab = networkMenuObj.AddComponent<NetworkMenuTab>();
