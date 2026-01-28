@@ -43,6 +43,12 @@ More info at [Notable Network Changes](./NETPLAY_CHANGES.md)
 <details>
 <summary>📋 Click to view full changelog</summary>
 
+### v2.0.2
+
+- 🐛 **Fixed item Ghost crashing**: This was the main reason everyone was crashing
+- 🐸 **Added egg interaction support**
+- 🎯 **Fixed client side Challenge shrines interactions** not working properly
+
 ### v2.0.1
 
 - 💾 **Added option** to allow saving in netplay sessions. Use at your own risk
