@@ -6,6 +6,12 @@
 #     "Change 2 description",
 # ]
 
+[version."3.0.0"]
+changes = [
+    "Added a distance throttler for enemies (they will not update / be rendered when too far away), same idea for projectile (reduced opacity for far away projectile). This in theory should help improve FPS",
+    "Rebalanced Reviver to make them less punishing early (start at low health and increase per player per death)"
+]
+
 [version."2.0.2"]
 changes = [
     "Fixed item Ghost crashing : This was the main reason everyone was crashing. (Note: There might be other items causing issues, please report them if you find any at https://github.com/Fcornaire/megabonk-together/issues)",

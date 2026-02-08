@@ -28,12 +28,15 @@ namespace MegabonkTogether.Services
         public void AddReviverEnemy_Name(Enemy enemy, string netplayName);
         public string GetReviverEnemy_Name(Enemy enemy);
         public void RemoveReviverEnemy_Name(Enemy enemy);
+        public void RebalanceIfNeededReviverEnemy(Enemy enemy, uint? currentReviver, uint? currentReviverOwner);
+        public void ResetReviverSpawnCounts();
     }
     internal class EnemyManagerService : IEnemyManagerService
     {
         private readonly ConcurrentDictionary<uint, Enemy> spawnedEnemies = [];
         private ConcurrentBag<EnemyModel> previousSpawnedEnemiesDelta = [];
         private readonly ConcurrentDictionary<Enemy, string> reviverEnemies_NetplayNames = [];
+        private readonly ConcurrentDictionary<uint, int> reviverSpawnCountPerOwner = [];
         private uint currentEnemyId = 0; //TODO: concurrency?
 
         private const float POSITION_TRESHOLD = 0.1f;
@@ -251,5 +254,33 @@ namespace MegabonkTogether.Services
             reviverEnemies_NetplayNames.TryRemove(enemy, out _);
         }
 
+        public void RebalanceIfNeededReviverEnemy(Enemy enemy, uint? currentReviver, uint? currentReviverOwner)
+        {
+            if (!currentReviver.HasValue || !currentReviverOwner.HasValue)
+            {
+                return;
+            }
+
+            var ownerId = currentReviverOwner.Value;
+            var count = reviverSpawnCountPerOwner.AddOrUpdate(ownerId, 1, (_, prev) => prev + 1);
+
+            if (count >= 6)
+            {
+                return;
+            }
+
+            var multiplier = (count * 2) / 12f;
+            var newHp = enemy.hp * multiplier;
+
+            enemy.hp = newHp;
+            enemy.controlHp = newHp;
+            enemy.maxHp = newHp;
+            enemy._hp_k__BackingField = newHp;
+        }
+
+        public void ResetReviverSpawnCounts()
+        {
+            reviverSpawnCountPerOwner.Clear();
+        }
     }
 }

@@ -43,6 +43,11 @@ More info at [Notable Network Changes](./NETPLAY_CHANGES.md)
 <details>
 <summary>📋 Click to view full changelog</summary>
 
+### v3.0.0
+
+- ⚡ **Added a distance throttler for enemies**: They will not update / be rendered when too far away. Same idea for projectiles (reduced opacity for far away projectiles). This should help improve FPS
+- 👻 **Rebalanced Reviver** to make them less punishing early (start at low health and increase per player per death)
+
 ### v2.0.2
 
 - 🐛 **Fixed item Ghost crashing**: This was the main reason everyone was crashing
