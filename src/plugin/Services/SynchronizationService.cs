@@ -275,6 +275,7 @@ namespace MegabonkTogether.Services
             cancellationToken = cancellationTokenSource.Token;
             PrepareForNextLevel();
             playerManagerService.Reset();
+            enemyManagerService.ResetReviverSpawnCounts();
 
             Plugin.Instance.HasDungeonTimerStarted = false;
         }
@@ -790,6 +791,8 @@ namespace MegabonkTogether.Services
             }
 
             var netplayId = enemyManagerService.AddSpawnedEnemy(enemy);
+
+            enemyManagerService.RebalanceIfNeededReviverEnemy(enemy, Plugin.Instance.CurrentReviver, Plugin.Instance.CurrentReviverOwner);
 
             IGameNetworkMessage message = new SpawnedEnemy
             {

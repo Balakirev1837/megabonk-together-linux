@@ -147,10 +147,12 @@ namespace MegabonkTogether.Scripts.Interactables
             chargeFx.SetActive(false);
 
             Plugin.Instance.CurrentReviver = reviverId;
+            Plugin.Instance.CurrentReviverOwner = ownerId;
             var enemy = EnemyManager.Instance.SpawnBoss(Actors.Enemies.EEnemy.GhostGrave4, 0, EEnemyFlag.Boss, this.transform.position, 2f);
             enemyManagerService.AddReviverEnemy_Name(enemy, GetFullName());
 
             Plugin.Instance.CurrentReviver = null;
+            Plugin.Instance.CurrentReviverOwner = null;
 
             var renderers = Il2CppFindHelper.RuntimeGetComponentsInChildren<Renderer>(enemy.gameObject, true);
 

@@ -80,6 +80,7 @@ namespace MegabonkTogether
         public bool IS_MANUAL_INVINCIBLE = false;
 
         public uint? CurrentReviver = null;
+        public uint? CurrentReviverOwner = null;
 
         private Vector3 WorldSize = Vector3.zero;
         public Vector3 OriginalWorldSize = Vector3.zero;
