@@ -1,4 +1,4 @@
-﻿using Actors.Enemies;
+using Actors.Enemies;
 using Assets.Scripts._Data.Hats;
 using Assets.Scripts._Data.Tomes;
 using Assets.Scripts.Actors;
@@ -140,6 +140,9 @@ namespace MegabonkTogether.Services
         private readonly ManualLogSource logger;
         private readonly ConcurrentBag<SpawnedObject> toSpawns = [];
         private readonly ConcurrentBag<SpawnedObjectInCrypt> toUpdate = [];
+        private readonly ConcurrentDictionary<uint, int> spawnRetryCount = new();
+        private readonly ConcurrentDictionary<uint, int> updateRetryCount = new();
+        private const int MAX_RETRIES = 5;
         private readonly ConcurrentDictionary<uint, ICollection<uint>> shrineChargingPlayers = new();
         private readonly ConcurrentDictionary<uint, ICollection<uint>> pylonChargingPlayers = new();
         private readonly ConcurrentDictionary<uint, ICollection<uint>> lampsChargingPlayers = [];
@@ -267,6 +270,8 @@ namespace MegabonkTogether.Services
             currentState = State.None;
             toSpawns.Clear();
             toUpdate.Clear();
+            spawnRetryCount.Clear();
+            updateRetryCount.Clear();
 
             shrineChargingPlayers.Clear();
             pylonChargingPlayers.Clear();
@@ -367,7 +372,20 @@ namespace MegabonkTogether.Services
                 return false;
             }
 
-            var spawned = HandleSpawn(prefab);
+            var hasShadyGuyRarity = toSpawn.SpecificData != null && toSpawn.SpecificData.ShadyGuyRarity >= 0;
+
+            GameObject spawned;
+            if (hasShadyGuyRarity)
+            {
+                var wasActive = prefab.activeSelf;
+                prefab.SetActive(false);
+                spawned = GameObject.Instantiate(prefab);
+                prefab.SetActive(wasActive);
+            }
+            else
+            {
+                spawned = HandleSpawn(prefab);
+            }
 
             if (spawned == null)
             {
@@ -381,7 +399,7 @@ namespace MegabonkTogether.Services
 
             spawnedObjectManagerService.SetSpawnedObject(toSpawn.Id, spawned);
 
-            if (toSpawn.SpecificData != null && toSpawn.SpecificData.ShadyGuyRarity >= 0)
+            if (hasShadyGuyRarity)
             {
                 var shadyGuy = spawned.GetComponentInChildren<InteractableShadyGuy>();
                 if (shadyGuy != null)
@@ -394,6 +412,7 @@ namespace MegabonkTogether.Services
                 {
                     DynamicData.For(microWave).Set("rarity", (EItemRarity)toSpawn.SpecificData.ShadyGuyRarity);
                 }
+                spawned.SetActive(true);
             }
 
             DynamicData.For(spawned).Set("netplayId", toSpawn.Id);
@@ -731,10 +750,19 @@ namespace MegabonkTogether.Services
                         canSpawn = toSpawns.Count > 0;
                     }
 
-                    foreach (var item in unspawnedYet) //Add back to retry later
+                    foreach (var item in unspawnedYet)
                     {
-                        logger.LogWarning($"Retrying spawn for object: {item.PrefabName}");
-                        toSpawns.Add(item);
+                        var retries = spawnRetryCount.AddOrUpdate(item.Id, 1, (_, c) => c + 1);
+                        if (retries < MAX_RETRIES)
+                        {
+                            logger.LogWarning($"Retrying spawn ({retries}/{MAX_RETRIES}) for object: {item.PrefabName}");
+                            toSpawns.Add(item);
+                        }
+                        else
+                        {
+                            logger.LogError($"Max retries exceeded, discarding object: {item.PrefabName} (id={item.Id})");
+                            spawnRetryCount.TryRemove(item.Id, out _);
+                        }
                     }
 
                     var canUpdate = toUpdate.Count > 0;
@@ -752,10 +780,19 @@ namespace MegabonkTogether.Services
                         canUpdate = toUpdate.Count > 0;
                     }
 
-                    foreach (var item in unupdatedYet) //Add back to retry later
+                    foreach (var item in unupdatedYet)
                     {
-                        logger.LogWarning($"Retrying update for object in crypt at position: x:{item.Position.QuantizedX} y:{item.Position.QuantizedY} z:{item.Position.QuantizedZ}");
-                        toUpdate.Add(item);
+                        var retries = updateRetryCount.AddOrUpdate(item.NetplayId, 1, (_, c) => c + 1);
+                        if (retries < MAX_RETRIES)
+                        {
+                            logger.LogWarning($"Retrying update ({retries}/{MAX_RETRIES}) for object in crypt at position: x:{item.Position.QuantizedX} y:{item.Position.QuantizedY} z:{item.Position.QuantizedZ}");
+                            toUpdate.Add(item);
+                        }
+                        else
+                        {
+                            logger.LogError($"Max retries exceeded, discarding crypt object id={item.NetplayId}");
+                            updateRetryCount.TryRemove(item.NetplayId, out _);
+                        }
                     }
                 }
 
@@ -863,25 +900,25 @@ namespace MegabonkTogether.Services
                 if (enemy.enemyData.enemyName == EEnemy.Ghost)
                 {
                     InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave1"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
+                    if (grave != null) grave.myEnemy = enemy;
                 }
 
                 if (enemy.enemyData.enemyName == EEnemy.GreaterGhost)
                 {
                     InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave2"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
+                    if (grave != null) grave.myEnemy = enemy;
                 }
 
                 if (enemy.enemyData.enemyName == EEnemy.GhostPurple)
                 {
                     InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave3"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
+                    if (grave != null) grave.myEnemy = enemy;
                 }
 
                 if (enemy.enemyData.enemyName == EEnemy.GhostRed)
                 {
                     InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave4"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
+                    if (grave != null) grave.myEnemy = enemy;
                 }
 
                 if (enemy.enemyData.enemyName == EEnemy.CalciumDad)
@@ -891,7 +928,10 @@ namespace MegabonkTogether.Services
                     {
                         logger.LogWarning("SkeletonKingStatue not found for CalciumDad enemy.");
                     }
-                    skeletonStatue?.myEnemy = enemy;
+                    else
+                    {
+                        skeletonStatue.myEnemy = enemy;
+                    }
                 }
             }
 

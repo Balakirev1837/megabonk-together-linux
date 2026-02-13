@@ -1,9 +1,10 @@
-﻿using MegabonkTogether.Common.Models;
+using MegabonkTogether.Common.Models;
 using MegabonkTogether.Helpers;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 
 namespace MegabonkTogether.Services
@@ -39,7 +40,7 @@ namespace MegabonkTogether.Services
         private readonly ConcurrentDictionary<uint, OrbInfo> _orbsById = [];
         private readonly ConcurrentQueue<uint> _queuedTargetIds = [];
         private readonly ConcurrentQueue<(uint targetId, uint orbId)> _pendingOrbCreation = [];
-        private uint _nextOrbId = 0;
+        private int _nextOrbId = 0;
 
         public void QueueNextTarget(uint targetId)
         {
@@ -60,7 +61,7 @@ namespace MegabonkTogether.Services
             if (!_queuedTargetIds.TryPeek(out var targetId))
                 return null;
 
-            var orbId = ++_nextOrbId;
+            var orbId = (uint)Interlocked.Increment(ref _nextOrbId);
             _pendingOrbCreation.Enqueue((targetId, orbId));
             return Tuple.Create(targetId, orbId);
         }

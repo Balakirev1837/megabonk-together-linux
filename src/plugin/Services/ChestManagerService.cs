@@ -1,7 +1,8 @@
-﻿
+
 using Assets.Scripts.Inventory__Items__Pickups.Interactables;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 
 namespace MegabonkTogether.Services
@@ -21,10 +22,10 @@ namespace MegabonkTogether.Services
     {
         private readonly ConcurrentDictionary<uint, Object> chests = [];
         private readonly ConcurrentQueue<uint> nextIds = [];
-        private uint nextChestId = 0;
+        private int nextChestId = -1;
         public uint AddChest(Object chestObject)
         {
-            var chestId = nextChestId++;
+            var chestId = (uint)Interlocked.Increment(ref nextChestId);
 
             chests.TryAdd(chestId, chestObject);
 
@@ -75,7 +76,7 @@ namespace MegabonkTogether.Services
 
         public void ResetForNextLevel()
         {
-            nextChestId = 0;
+            nextChestId = -1;
             nextIds.Clear();
             //chests.Select(kvp => kvp.Value).ToList().ForEach(GameObject.Destroy);
             chests.Clear();

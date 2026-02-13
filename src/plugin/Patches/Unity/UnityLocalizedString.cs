@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MegabonkTogether.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +15,7 @@ namespace MegabonkTogether.Patches.Unity
         /// Use custom localization service to get localized string if needed (used in notification)
         /// </summary>
         [HarmonyPrefix]
-        [HarmonyPatch(nameof(LocalizedString.GetLocalizedString), [])]
+        [HarmonyPatch(nameof(LocalizedString.GetLocalizedString), new System.Type[0])]
         public static bool GetLocalizedString_Prefix(LocalizedString __instance, ref string __result)
         {
             var tableRef = __instance.TableReference?.TableCollectionName;

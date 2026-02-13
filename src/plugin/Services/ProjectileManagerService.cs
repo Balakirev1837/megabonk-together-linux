@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Inventory__Items__Pickups.Weapons.Projectiles;
+using Assets.Scripts.Inventory__Items__Pickups.Weapons.Projectiles;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Extensions;
 using MegabonkTogether.Helpers;
@@ -6,6 +6,7 @@ using MegabonkTogether.Scripts.Snapshot;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 
 namespace MegabonkTogether.Services
@@ -30,7 +31,7 @@ namespace MegabonkTogether.Services
     {
         private readonly ConcurrentDictionary<uint, ProjectileBase> spawnedProjectile = [];
         private List<Projectile> previousSpawnedProjectilesDelta = [];
-        private uint currentProjectileId = 0;
+        private int currentProjectileId = -1;
         private ProjectileInterpolator projectileInterpolator;
 
         private const float POSITION_THRESHOLD = 0.05f;
@@ -98,14 +99,14 @@ namespace MegabonkTogether.Services
 
         public uint AddSpawnedProjectile(ProjectileBase projectile)
         {
-            currentProjectileId++;
-            if (!spawnedProjectile.TryAdd(currentProjectileId, projectile))
+            var projectileId = (uint)Interlocked.Increment(ref currentProjectileId);
+            if (!spawnedProjectile.TryAdd(projectileId, projectile))
             {
-                Plugin.Log.LogWarning($"Attempted to add a projectile that already exists. Id: {currentProjectileId}");
+                Plugin.Log.LogWarning($"Attempted to add a projectile that already exists. Id: {projectileId}");
                 return 0;
             }
 
-            return currentProjectileId;
+            return projectileId;
         }
 
         public KeyValuePair<uint, ProjectileBase> GetProjectileByReference(ProjectileBase projectile)
@@ -126,7 +127,7 @@ namespace MegabonkTogether.Services
 
         public void ResetForNextLevel()
         {
-            currentProjectileId = 0;
+            currentProjectileId = -1;
             spawnedProjectile.Clear();
             previousSpawnedProjectilesDelta.Clear();
 
