@@ -886,9 +886,16 @@ namespace MegabonkTogether.Services
 
             if (spawnedEnemy.ReviverId.HasValue)
             {
-                var reviver = spawnedObjectManagerService.GetSpawnedObject(spawnedEnemy.ReviverId.Value).GetComponent<InteractableReviver>();
-                reviver?.SetSpawnedEnemy(enemy);
-                enemyManagerService.AddReviverEnemy_Name(enemy, reviver.GetFullName());
+                var reviverObj = spawnedObjectManagerService.GetSpawnedObject(spawnedEnemy.ReviverId.Value);
+                if (reviverObj != null)
+                {
+                    var reviver = reviverObj.GetComponent<InteractableReviver>();
+                    if (reviver != null)
+                    {
+                        reviver.SetSpawnedEnemy(enemy);
+                        enemyManagerService.AddReviverEnemy_Name(enemy, reviver.GetFullName());
+                    }
+                }
             }
 
             enemy.hp = spawnedEnemy.Hp;
