@@ -1,4 +1,5 @@
-﻿using MegabonkTogether.Common.Models;
+using MegabonkTogether.Common;
+using MegabonkTogether.Common.Models;
 using System.Runtime.CompilerServices;
 using UnityEngine;
 
@@ -6,44 +7,33 @@ namespace MegabonkTogether.Helpers
 {
     public static class Quantizer
     {
-        private static float GetWorldMin()
+        public static void InitializeFromWorldSize(Vector3 worldSize)
         {
-            return Plugin.Instance.GetWorldSize().x / -2f;
-        }
-
-        private static float GetWorldMax()
-        {
-            return Plugin.Instance.GetWorldSize().x / 2f;
-        }
-
-        private static float GetRange()
-        {
-            return GetWorldMax() - GetWorldMin();
+            QuantizerCore.ConfigureWorldBounds(-worldSize.x / 2f, worldSize.x / 2f);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Quaternion Dequantize(QuantizedRotation rotation)
         {
-            ushort QYaw = rotation.QuantizedYaw;
-            float yaw = DequantizeYaw(QYaw);
+            float yaw = QuantizerCore.DequantizeYaw(rotation.QuantizedYaw);
             return Quaternion.Euler(0, yaw, 0);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static short Quantize(float value)
         {
-            float t = (value - GetWorldMin()) / GetRange();
-            return (short)(t * short.MaxValue);
+            return QuantizerCore.Quantize(value);
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static QuantizedVector4 Quantize(Quaternion rotation)
         {
             return new QuantizedVector4
             {
-                QuantizedX = Quantize(rotation.x),
-                QuantizedY = Quantize(rotation.y),
-                QuantizedZ = Quantize(rotation.z),
-                QuantizedW = Quantize(rotation.w)
+                QuantizedX = QuantizerCore.Quantize(rotation.x),
+                QuantizedY = QuantizerCore.Quantize(rotation.y),
+                QuantizedZ = QuantizerCore.Quantize(rotation.z),
+                QuantizedW = QuantizerCore.Quantize(rotation.w)
             };
         }
 
@@ -51,22 +41,21 @@ namespace MegabonkTogether.Helpers
         public static Quaternion Dequantize(QuantizedVector4 qRot)
         {
             return new Quaternion(
-                Dequantize(qRot.QuantizedX),
-                Dequantize(qRot.QuantizedY),
-                Dequantize(qRot.QuantizedZ),
-                Dequantize(qRot.QuantizedW)
+                QuantizerCore.Dequantize(qRot.QuantizedX),
+                QuantizerCore.Dequantize(qRot.QuantizedY),
+                QuantizerCore.Dequantize(qRot.QuantizedZ),
+                QuantizerCore.Dequantize(qRot.QuantizedW)
             );
         }
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static QuantizedVector3 Quantize(Vector3 position)
         {
             return new QuantizedVector3
             {
-                QuantizedX = Quantize(position.x),
-                QuantizedY = Quantize(position.y),
-                QuantizedZ = Quantize(position.z)
+                QuantizedX = QuantizerCore.Quantize(position.x),
+                QuantizedY = QuantizerCore.Quantize(position.y),
+                QuantizedZ = QuantizerCore.Quantize(position.z)
             };
         }
 
@@ -74,9 +63,9 @@ namespace MegabonkTogether.Helpers
         public static Vector3 Dequantize(QuantizedVector3 qPos)
         {
             return new Vector3(
-                Dequantize(qPos.QuantizedX),
-                Dequantize(qPos.QuantizedY),
-                Dequantize(qPos.QuantizedZ)
+                QuantizerCore.Dequantize(qPos.QuantizedX),
+                QuantizerCore.Dequantize(qPos.QuantizedY),
+                QuantizerCore.Dequantize(qPos.QuantizedZ)
             );
         }
 
@@ -85,8 +74,8 @@ namespace MegabonkTogether.Helpers
         {
             return new QuantizedVector2
             {
-                QuantizedX = Quantize(position.x),
-                QuantizedY = Quantize(position.y)
+                QuantizedX = QuantizerCore.Quantize(position.x),
+                QuantizedY = QuantizerCore.Quantize(position.y)
             };
         }
 
@@ -94,36 +83,33 @@ namespace MegabonkTogether.Helpers
         public static Vector2 Dequantize(QuantizedVector2 qPos)
         {
             return new Vector2(
-                Dequantize(qPos.QuantizedX),
-                Dequantize(qPos.QuantizedY)
+                QuantizerCore.Dequantize(qPos.QuantizedX),
+                QuantizerCore.Dequantize(qPos.QuantizedY)
             );
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Dequantize(short q)
         {
-            float t = q / (float)short.MaxValue;
-            return GetWorldMin() + t * GetRange();
+            return QuantizerCore.Dequantize(q);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static QuantizedRotation QuantizeYaw(float yawDeg)
         {
-            yawDeg = Mathf.Repeat(yawDeg, 360f);
-            var res = (ushort)(yawDeg / 360f * ushort.MaxValue);
-            return new QuantizedRotation { QuantizedYaw = res };
+            return QuantizerCore.QuantizeYaw(yawDeg);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float DequantizeYaw(QuantizedRotation qRot)
         {
-            return DequantizeYaw(qRot.QuantizedYaw);
+            return QuantizerCore.DequantizeYaw(qRot);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float DequantizeYaw(ushort qYaw)
         {
-            return (qYaw / (float)ushort.MaxValue) * 360f;
+            return QuantizerCore.DequantizeYaw(qYaw);
         }
     }
 }

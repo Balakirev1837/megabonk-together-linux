@@ -468,6 +468,7 @@ namespace MegabonkTogether
         public void SetWorldSize(Vector3 size)
         {
             WorldSize = size;
+            Helpers.Quantizer.InitializeFromWorldSize(size);
         }
 
         public Vector3 GetWorldSize()
