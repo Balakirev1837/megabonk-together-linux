@@ -62,3 +62,19 @@ bd dep add <from> <to>  # Add dependency
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## Testing
+
+**Test documentation:** `.agent-docs/testing.md`
+
+**Quick commands:**
+```bash
+dotnet test src/tests                                    # Run all 145+ tests
+dotnet test src/tests --filter "MessageParsing"          # Serialization tests
+dotnet test src/tests --filter "ProtocolCoverage"        # Union coverage tests
+```
+
+**When to run tests:**
+- Before every commit with code changes
+- After adding/modifying message types or models
+- After changing quantization logic
+
