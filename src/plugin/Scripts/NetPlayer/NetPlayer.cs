@@ -47,6 +47,7 @@ namespace MegabonkTogether.Scripts.NetPlayer
 
         private IPlayerManagerService playerManagerService;
         private ISynchronizationService synchronizationService;
+        private INetPlayerContext netPlayerContext;
         private bool hasInitializedConstantAttacks = false;
 
         private GameObject minimapIcon;
@@ -61,6 +62,7 @@ namespace MegabonkTogether.Scripts.NetPlayer
             interpolator = gameObject.AddComponent<PlayerInterpolator>();
             playerManagerService = Plugin.Services.GetService<IPlayerManagerService>();
             synchronizationService = Plugin.Services.GetService<ISynchronizationService>();
+            netPlayerContext = Plugin.Services.GetService<INetPlayerContext>();
         }
 
         protected void Update()

@@ -152,6 +152,7 @@ namespace MegabonkTogether
                 services.AddSingleton<IAutoUpdaterService, AutoUpdaterService>();
                 services.AddSingleton<IChangelogService, ChangelogService>();
                 services.AddSingleton<INetworkMonitorService, NetworkMonitorService>();
+                services.AddSingleton<INetPlayerContext, NetPlayerContext>();
             });
 
             Host = builder.Build();

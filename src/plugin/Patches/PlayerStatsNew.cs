@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Inventory__Items__Pickups.Stats;
+using Assets.Scripts.Inventory__Items__Pickups.Stats;
 using Assets.Scripts.Menu.Shop;
 using HarmonyLib;
 using MegabonkTogether.Services;
@@ -6,15 +6,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace MegabonkTogether.Patches
 {
-    /// <summary>
-    /// Use netplayer stats from his inventory when requested instead of local player stats
-    /// </summary>
     [HarmonyPatch(typeof(PlayerStatsNew))]
     internal static class PlayerStatsNewPatches
     {
         private static readonly ISynchronizationService synchronizationService = Plugin.Services.GetService<ISynchronizationService>();
         private static readonly IPlayerManagerService playerManagerService = Plugin.Services.GetService<IPlayerManagerService>();
-        private static bool shouldIgnoreNextPatch = false;
+        private static readonly INetPlayerContext netPlayerContext = Plugin.Services.GetService<INetPlayerContext>();
 
         [HarmonyPrefix]
         [HarmonyPatch(nameof(PlayerStatsNew.GetStat))]
@@ -25,21 +22,14 @@ namespace MegabonkTogether.Patches
                 return true;
             }
 
-            if (shouldIgnoreNextPatch)
+            var currentPlayerId = netPlayerContext.CurrentPlayerId;
+            if (currentPlayerId.HasValue && playerManagerService.IsRemoteConnectionId(currentPlayerId.Value))
             {
-                shouldIgnoreNextPatch = false;
-                return true;
-            }
-
-            var peaked = playerManagerService.PeakNetplayerPositionRequest();
-            if (peaked.HasValue && playerManagerService.IsRemoteConnectionId(peaked.Value))
-            {
-                var netPlayer = playerManagerService.GetNetPlayerByNetplayId(peaked.Value);
+                var netPlayer = playerManagerService.GetNetPlayerByNetplayId(currentPlayerId.Value);
                 if (netPlayer == null)
                 {
                     return true;
                 }
-                shouldIgnoreNextPatch = true;
                 __result = netPlayer.Inventory.playerStats.GetStat(stat);
                 return false;
             }
