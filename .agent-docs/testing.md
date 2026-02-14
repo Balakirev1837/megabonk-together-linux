@@ -1,300 +1,220 @@
 # Testing Guide
 
-> Agent-first documentation. Testing approach, patterns, and verification steps.
+> Agent-first documentation. Run commands, test inventory, and patterns.
 
-## Testing Overview
+## Quick Reference
 
-Megabonk Together uses a layered testing approach:
+```bash
+# Run all tests
+dotnet test src/tests
 
-| Layer | Type | Location |
-|-------|------|----------|
-| Unit | Serialization, quantization | `src/tests/` |
-| Integration | Service interactions | Manual (game runtime) |
-| End-to-End | Cross-play verification | Manual (multi-client) |
+# Run specific test class
+dotnet test src/tests --filter "FullyQualifiedName~MessageParsingTests"
+
+# Run specific test
+dotnet test src/tests --filter "FullyQualifiedName~RequestChestOpen_ShouldRoundTripCorrectly"
+
+# Run with verbose output
+dotnet test src/tests -v n
+
+# Run without build (faster if already built)
+dotnet test src/tests --no-build
+```
 
 ---
 
-## Unit Tests
+## Test Suite Overview
 
-### Location
+| File | Tests | Purpose |
+|------|-------|---------|
+| `MessageParsingTests.cs` | 60+ | MemoryPack serialization round-trips |
+| `ProtocolCoverageTests.cs` | 4+ | Union registration, unique codes, coverage |
+| `QuantizationTests.cs` | 6 | Vector compression precision |
 
-```
-src/tests/
-├── MessageParsingTests.cs   # MemoryPack serialization
-├── QuantizationTests.cs     # Vector compression precision
-└── ...
-```
+**Framework:** xUnit v2.9.3
+**Assertions:** FluentAssertions v6.12.0
+**Mocks:** NSubstitute v5.1.0
+**Serialization:** MemoryPack v1.21.4
 
-### Running Tests
+---
 
-```bash
-cd src/tests
-dotnet test
-```
+## When to Run Tests
 
-### Test Categories
+| Trigger | Command |
+|---------|---------|
+| Before commit | `dotnet test src/tests` |
+| After changing messages | `dotnet test src/tests --filter "MessageParsing"` |
+| After changing models | `dotnet test src/tests --filter "ProtocolCoverage"` |
+| After changing quantization | `dotnet test src/tests --filter "Quantization"` |
+| CI/CD | `dotnet test src/tests --logger "trx" --results-directory ./test-results` |
 
-#### Serialization Tests
+---
 
-Verify MemoryPack round-trips correctly:
+## Test Files
 
+### MessageParsingTests.cs
+
+**Location:** `src/tests/MessageParsingTests.cs`
+**Focus:** Serialization round-trips for all `IGameNetworkMessage` implementations
+
+**Pattern:**
 ```csharp
-[Test]
-public void PlayerUpdate_SerializeDeserialize_RoundTrip()
+[Fact]
+public void MessageType_ShouldRoundTripCorrectly()
 {
-    var original = new PlayerUpdate
-    {
-        ConnectionId = 123,
-        Position = new QuantizedVector3(100, 200, 300),
-        Hp = 50,
-        MaxHp = 100
-    };
-    
-    byte[] data = MemoryPackSerializer.Serialize<PlayerUpdate>(original);
-    var result = MemoryPackSerializer.Deserialize<PlayerUpdate>(data);
-    
-    Assert.AreEqual(original.ConnectionId, result.ConnectionId);
-    Assert.AreEqual(original.Position.X, result.Position.X);
+    var original = new MessageType { Field = value };
+    var bytes = MemoryPackSerializer.Serialize<IGameNetworkMessage>(original);
+    var parsed = MemoryPackSerializer.Deserialize<IGameNetworkMessage>(bytes);
+    parsed.Should().BeOfType<MessageType>();
+    var typed = (MessageType)parsed!;
+    typed.Field.Should().Be(value);
 }
 ```
 
-#### Quantization Tests
+**Message Types Tested:**
 
-Verify precision within acceptable bounds:
+| Category | Types |
+|----------|-------|
+| Player | `PlayerUpdate`, `PlayerDied`, `PlayerRespawned`, `Introduced`, `PlayerDisconnected`, `SelectedCharacter` |
+| Enemy | `SpawnedEnemy`, `EnemyDied`, `EnemyDamaged`, `EnemyExploder`, `SpawnedEnemySpecialAttack`, `RetargetedEnemies` |
+| Projectile | `SpawnedProjectile`, `ProjectileDone`, `SpawnedAxeProjectile`, `SpawnedBlackHoleProjectile`, `SpawnedRocketProjectile`, `SpawnedShotgunProjectile`, `SpawnedDexecutionerProjectile`, `SpawnedFireFieldProjectile`, `SpawnedCringeSwordProjectile`, `SpawnedHeroSwordProjectile`, `SpawnedRevolverProjectile`, `SpawnedSniperProjectile`, `ProjectilesUpdate` |
+| Pickup | `SpawnedPickupOrb`, `SpawnedPickup`, `PickupApplied`, `PickupFollowingPlayer`, `WantToStartFollowingPickup` |
+| Chest | `SpawnedChest`, `ChestOpened`, `RequestChestOpen`, `GrantChestOpen` |
+| Weapon/Item | `WeaponAdded`, `WeaponToggled`, `TomeAdded`, `ItemAdded`, `ItemRemoved` |
+| Interactable | `InteractableUsed`, `StartingChargingShrine`, `StoppingChargingShrine`, `StartingChargingPylon`, `StoppingChargingPylon`, `StartingChargingLamp`, `StoppingChargingLamp`, `SpawnedObjectInCrypt`, `InteractableCharacterFightEnemySpawned` |
+| World/Event | `SpawnedObject`, `LobbyUpdates`, `RunStarted`, `GameOver`, `StartedSwarmEvent`, `StormStarted`, `StormStopped`, `TornadoesSpawned`, `TumbleWeedSpawned`, `TumbleWeedsUpdate`, `TumbleWeedDespawned`, `TimerStarted` |
+| Boss | `FinalBossOrbSpawned`, `FinalBossOrbDestroyed`, `LightningStrike` |
+| Lobby | `ClientInGameReady`, `HatChanged`, `SpawnedReviver` |
 
+---
+
+### ProtocolCoverageTests.cs
+
+**Location:** `src/tests/ProtocolCoverageTests.cs`
+**Focus:** Protocol integrity and MemoryPack union registration
+
+| Test | Purpose |
+|------|---------|
+| `AllMessageTypes_ShouldBeRegisteredInUnion` | Every `IGameNetworkMessage` has MemoryPackUnion attribute |
+| `AllMessageTypes_ShouldRoundTripWithPopulatedData` | All message types serialize/deserialize with auto-populated data |
+| `AllMessageTypes_ShouldHaveUniqueUnionCodes` | No duplicate union tags |
+| `MessageType_ShouldRoundTrip` (Theory) | Per-type round-trip via MemberData |
+
+**TestDataBuilder:**
+
+Auto-generates test data for any type:
+- Primitives: `int=42`, `float=3.14f`, `bool=true`, `string="TestData"`
+- Vectors: `QuantizedVector3`, `QuantizedVector2`, `Vector3`, `Quaternion`
+- Collections: `List<T>` with one populated item
+- Models: `EnemyModel`, `Player`, `Projectile`, etc.
+
+---
+
+### QuantizationTests.cs
+
+**Location:** `src/tests/QuantizationTests.cs`
+**Focus:** Precision bounds for vector compression
+
+| Test | Input | Expected Precision |
+|------|-------|-------------------|
+| `Yaw_ShouldRoundTripWithAcceptablePrecision` | `[0, 180, 359.9, -10, 720]` | ±0.01° |
+| `Position_ShouldRoundTripWithAcceptablePrecision` | `[0, 100, -250, 499]` | ±0.05 units |
+| `Quantize_ShouldBeClampedByRange` | `[-500, 500]` | Exact boundary match |
+
+**World Bounds:**
+- Min: -500
+- Max: 500
+- Range: 1000
+- Precision: ~0.03 units (1000/32767)
+
+---
+
+## Test Patterns
+
+### Round-Trip Pattern
 ```csharp
-[Test]
-public void QuantizeVector3_WithinPrecision()
+// Standard serialization test
+var bytes = MemoryPackSerializer.Serialize<IGameNetworkMessage>(original);
+var parsed = MemoryPackSerializer.Deserialize<IGameNetworkMessage>(bytes);
+parsed.Should().BeOfType<ExpectedType>();
+```
+
+### Theory Pattern (Parameterized)
+```csharp
+[Theory]
+[InlineData(0f)]
+[InlineData(180f)]
+public void Yaw_ShouldRoundTrip(float input) { ... }
+```
+
+### MemberData Pattern (Dynamic)
+```csharp
+[Theory]
+[MemberData(nameof(GetAllMessageTypes))]
+public void MessageType_ShouldRoundTrip(Type messageType) { ... }
+
+public static IEnumerable<object[]> GetAllMessageTypes() => 
+    CommonAssembly.GetTypes()
+        .Where(t => typeof(IGameNetworkMessage).IsAssignableFrom(t))
+        .Select(t => new object[] { t });
+```
+
+---
+
+## Adding New Tests
+
+### For New Message Type
+
+1. Add round-trip test in `MessageParsingTests.cs`:
+```csharp
+[Fact]
+public void NewMessageType_ShouldRoundTripCorrectly()
 {
-    var original = new Vector3(1.234f, 5.678f, 9.012f);
-    
-    var quantized = Quantizer.Quantize(original);
-    var dequantized = Quantizer.Dequantize(quantized);
-    
-    var diff = Vector3.Distance(original, dequantized);
-    Assert.Less(diff, 0.01f);  // Within 1cm precision
+    var original = new NewMessageType { Field = value };
+    var bytes = MemoryPackSerializer.Serialize<IGameNetworkMessage>(original);
+    var parsed = MemoryPackSerializer.Deserialize<IGameNetworkMessage>(bytes);
+    parsed.Should().BeOfType<NewMessageType>();
+    // Assert field values
+}
+```
+
+2. ProtocolCoverageTests auto-detects new types via reflection
+
+### For New Model
+
+Add to `TestDataBuilder` in `ProtocolCoverageTests.cs`:
+```csharp
+if (type == typeof(NewModel))
+{
+    return new NewModel { Property = defaultValue };
 }
 ```
 
 ---
 
-## Integration Testing (Runtime)
+## Common Failures
 
-### Prerequisites
-
-- Game installed with BepInEx
-- Plugin built and deployed
-- Local server running (optional)
-
-### Test Scenarios
-
-#### 1. Plugin Load Test
-
-```bash
-# Start game, check for errors
-tail -f BepInEx/LogOutput.log | grep -E "(ERROR|Exception)"
-```
-
-**Expected:** No errors during plugin load
-
-#### 2. Menu Button Test
-
-1. Launch game to main menu
-2. Verify "Together!" button appears
-3. Click button, verify menu opens
-
-#### 3. Connection Test (Local Server)
-
-```bash
-# Terminal 1: Start server
-cd src/server && dotnet run
-
-# Terminal 2: Update config
-echo '[Network]
-ServerUrl = ws://127.0.0.1:5000/ws' > BepInEx/config/MegabonkTogether.cfg
-
-# Terminal 3: Monitor logs
-tail -f BepInEx/LogOutput.log
-```
-
-1. Launch game
-2. Open Together menu
-3. Select "Random" queue
-4. Verify connection in logs
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `NullReferenceException` in round-trip | Missing MemoryPackUnion attribute | Add `[MemoryPackUnion(tag, typeof(Type))]` to `IGameNetworkMessage` |
+| Duplicate tag | Two messages share union code | Assign unique tag |
+| Precision failure | Quantization out of range | Check world bounds |
+| Type mismatch after deserialize | Wrong union tag order | Verify tag mapping |
 
 ---
 
-## End-to-End Testing (Multi-Client)
-
-### Single Machine Test
-
-Requires two game instances:
-
-1. **Copy game folder** to second location
-2. **Install BepInEx + Plugin** in both
-3. **Start local server**
-4. **Launch both games**
-5. **Join same queue**
-
-### Cross-Play Verification Checklist
-
-| Test | Steps | Expected |
-|------|-------|----------|
-| **Join** | Player B joins Player A's game | B spawns in A's world |
-| **Movement** | A moves around | B sees A move smoothly |
-| **Enemy Sync** | Enemies spawn | Both see same enemies |
-| **Combat** | A kills enemy | Enemy dies for both |
-| **Items** | A picks up item | Both see pickup disappear |
-| **Chest** | A opens chest | Only A gets reward |
-| **Portal** | A enters portal | Both transition to next level |
-
-### Latency Testing
-
-Test with artificial latency:
-
-```bash
-# Linux: Add 100ms latency
-sudo tc qdisc add dev eth0 root netem delay 100ms
-
-# Remove latency
-sudo tc qdisc del dev eth0 root
-```
-
-### Desync Detection
-
-Watch for desync indicators:
-
-1. **Enemy position mismatch** - Enemy jumps/glitches
-2. **Ghost enemies** - Enemy visible but not really there
-3. **Item duplication** - Both players pick up same item
-4. **Health desync** - HP bar doesn't match damage
-
----
-
-## Debug Logging
-
-### Enable Verbose Logging
-
-**Client:** `BepInEx/config/BepInEx.cfg`
-```ini
-[Logging]
-LogLevel = Debug
-```
-
-**Server:** `src/server/appsettings.json`
-```json
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Debug"
-    }
-  }
-}
-```
-
-### Log Analysis Commands
-
-```bash
-# Count errors
-grep -c "ERROR" BepInEx/LogOutput.log
-
-# Find exceptions
-grep "Exception" BepInEx/LogOutput.log
-
-# Network messages
-grep -E "(Sending|Received)" BepInEx/LogOutput.log
-
-# Filter by service
-grep "SynchronizationService" BepInEx/LogOutput.log
-```
-
----
-
-## Performance Testing
-
-### Metrics to Monitor
-
-| Metric | Target | How to Check |
-|--------|--------|--------------|
-| FPS | > 60 | Unity stats |
-| Memory | Stable | Process monitor |
-| Bandwidth | < 100 KB/s | Network monitor |
-| Latency | < 100ms RTT | Ping to server |
-
-### Stress Test Scenarios
-
-1. **Max Players (6)** - Full lobby
-2. **Enemy Hordes (500+)** - Swarm event
-3. **Extended Play (30+ min)** - Memory leak check
-4. **Rapid Join/Leave** - Connection handling
-
----
-
-## Regression Test Checklist
-
-Before releasing, verify:
-
-- [ ] Plugin loads without errors
-- [ ] Menu button visible and functional
-- [ ] Can join random queue
-- [ ] Can create/join friendlies
-- [ ] Player movement synchronized
-- [ ] Enemy spawning synchronized
-- [ ] Enemy death synchronized
-- [ | Projectiles synchronized
-- [ ] Pickups synchronized
-- [ ] Chest claim protocol works
-- [ ] Shrine charging works
-- [ ] Boss fight synchronized
-- [ ] Portal transitions work
-- [ ] Player death/respawn works
-- [ ] Disconnection handled gracefully
-- [ ] Cross-play with Windows works
-
----
-
-## Known Issues to Test For
-
-### High Priority
-
-| Issue | Test | Fix Status |
-|-------|------|------------|
-| Chest duplicate rewards | Two players open same chest | Fixed (claim protocol) |
-| Ghost item crash | Collect ghost item | Fixed (v2.0.2) |
-| HP desync on respawn | Player respawns | Partial |
-
-### Medium Priority
-
-| Issue | Test | Fix Status |
-|-------|------|------------|
-| Enemy attack desync | Watch enemy attacks | Open |
-| XP drop desync | Kill enemies, watch XP | Open |
-| I-frames on respawn | Player spawns in swarm | Open |
-
----
-
-## Automated Testing (Future)
-
-### Potential Additions
-
-1. **CI/CD Tests** - Run unit tests on PR
-2. **Mock Network Tests** - Simulate client/server without game
-3. **Snapshot Comparison** - Verify LobbyUpdates consistency
-4. **Performance Benchmarks** - Track serialization speed
-
-### Test Infrastructure
+## CI Integration
 
 ```yaml
 # .github/workflows/test.yml
-name: Tests
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '8.0.x'
-      - run: dotnet test src/tests
+- name: Run Tests
+  run: dotnet test src/tests --logger "trx" --results-directory ./test-results
 ```
+
+---
+
+## Related Files
+
+- `src/tests/MegabonkTogether.Tests.csproj` - Project configuration
+- `src/common/MegabonkTogether.Common/Messages/IGameNetworkMessage.cs` - Union definitions
+- `src/common/MegabonkTogether.Common/Models/` - Data models
