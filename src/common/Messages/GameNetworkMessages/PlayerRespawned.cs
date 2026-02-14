@@ -1,4 +1,4 @@
-﻿using MegabonkTogether.Common.Models;
+using MegabonkTogether.Common.Models;
 using MemoryPack;
 
 namespace MegabonkTogether.Common.Messages.GameNetworkMessages

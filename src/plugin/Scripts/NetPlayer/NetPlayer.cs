@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Camera;
+using Assets.Scripts.Camera;
 using Assets.Scripts.Game.Combat.ConstantAttacks;
 using Assets.Scripts.Inventory__Items__Pickups.Items;
 using Assets.Scripts.Inventory__Items__Pickups.Stats;
@@ -640,6 +640,7 @@ namespace MegabonkTogether.Scripts.NetPlayer
             isDead = false;
             Model.SetActive(true);
             Model.transform.position = position;
+            RefreshConstantAttack(new());
         }
     }
 }
