@@ -77,6 +77,7 @@ namespace MegabonkTogether.Services
     {
         private const int MAX_PACKET_SIZE_BYTES = 1000;
         private const int STARTING_GAME_UDP_PORT = 27015;
+        private const string CONNECTION_KEY = "megabonk_together_v1";
         private int GAME_UDP_PORT = STARTING_GAME_UDP_PORT;
         private NetManager netManager;
         private EventBasedNetListener listener;
@@ -206,7 +207,7 @@ namespace MegabonkTogether.Services
                     if (netManager != null && netManager.IsRunning)
                     {
                         Plugin.Log.LogInfo($"Connecting...");
-                        netManager.Connect(target, "yourKey"); //TODO: technically we should use a key but do we really care ? will check later
+                        netManager.Connect(target, CONNECTION_KEY);
                     }
                     else
                     {
@@ -221,8 +222,16 @@ namespace MegabonkTogether.Services
 
             listener.ConnectionRequestEvent += request =>
             {
-                Plugin.Log.LogInfo($"Got a connection request from remote"); //TODO: technically we should validate the request key here
-                request.Accept();
+                var key = request.Data.GetString();
+                if (key == CONNECTION_KEY)
+                {
+                    request.Accept();
+                }
+                else
+                {
+                    logger.LogWarning($"Rejected connection request with invalid key: {key}");
+                    request.Reject();
+                }
             };
 
             listener.PeerConnectedEvent += peer =>
