@@ -135,9 +135,10 @@ namespace MegabonkTogether.Scripts.NetPlayer
 
             try
             {
-                playerManagerService.AddGetNetplayerPositionRequest(connectionId);
-                inventory.PhysicsTick();
-                playerManagerService.UnqueueNetplayerPositionRequest();
+                using (netPlayerContext.BeginScope(connectionId))
+                {
+                    inventory.PhysicsTick();
+                }
             }
             catch (System.Exception ex)
             {
