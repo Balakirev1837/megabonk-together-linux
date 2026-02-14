@@ -1967,7 +1967,7 @@ namespace MegabonkTogether.Services
                 PickupId = pickupId,
                 PlayerId = ownerId
             };
-            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableSequenced);
         }
 
         public void OnSpawnedChest(Vector3 position, Quaternion rotation, UnityEngine.Object obj)
@@ -2686,7 +2686,7 @@ namespace MegabonkTogether.Services
                 return false;
             }
 
-            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableSequenced);
 
             return true;
         }
@@ -2725,7 +2725,7 @@ namespace MegabonkTogether.Services
                 shrineObj.OnTriggerEnter();
                 Plugin.CAN_SEND_MESSAGES = true;
 
-                udpClientService.SendToAllClients(shrine, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                udpClientService.SendToAllClients(shrine, LiteNetLib.DeliveryMethod.ReliableSequenced);
             }
             else
             {
@@ -2779,7 +2779,7 @@ namespace MegabonkTogether.Services
                 return false;
             }
 
-            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableSequenced);
 
             return true;
         }
@@ -2818,7 +2818,7 @@ namespace MegabonkTogether.Services
                 shrineObj.OnTriggerExit();
                 Plugin.CAN_SEND_MESSAGES = true;
 
-                udpClientService.SendToAllClients(shrine, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                udpClientService.SendToAllClients(shrine, LiteNetLib.DeliveryMethod.ReliableSequenced);
             }
             else
             {
@@ -3024,7 +3024,7 @@ namespace MegabonkTogether.Services
                 pylonObj.OnTriggerEnter();
                 Plugin.CAN_SEND_MESSAGES = true;
 
-                udpClientService.SendToAllClients(pylon, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                udpClientService.SendToAllClients(pylon, LiteNetLib.DeliveryMethod.ReliableSequenced);
             }
             else
             {
@@ -3117,7 +3117,7 @@ namespace MegabonkTogether.Services
                 lampObj.OnTriggerEnter();
                 Plugin.CAN_SEND_MESSAGES = true;
 
-                udpClientService.SendToAllClients(lamp, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                udpClientService.SendToAllClients(lamp, LiteNetLib.DeliveryMethod.ReliableSequenced);
             }
             else
             {
@@ -3212,7 +3212,7 @@ namespace MegabonkTogether.Services
                 pylonObj.OnTriggerExit();
                 Plugin.CAN_SEND_MESSAGES = true;
 
-                udpClientService.SendToAllClients(pylon, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                udpClientService.SendToAllClients(pylon, LiteNetLib.DeliveryMethod.ReliableSequenced);
             }
             else
             {
@@ -3303,7 +3303,7 @@ namespace MegabonkTogether.Services
                 lampObj.OnTriggerExit();
                 Plugin.CAN_SEND_MESSAGES = true;
 
-                udpClientService.SendToAllClients(lamp, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                udpClientService.SendToAllClients(lamp, LiteNetLib.DeliveryMethod.ReliableSequenced);
             }
             else
             {
