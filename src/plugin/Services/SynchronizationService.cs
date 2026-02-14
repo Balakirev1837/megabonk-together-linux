@@ -1,4 +1,4 @@
-﻿using Actors.Enemies;
+using Actors.Enemies;
 using Assets.Scripts._Data.Hats;
 using Assets.Scripts._Data.Tomes;
 using Assets.Scripts.Actors;
@@ -86,6 +86,9 @@ namespace MegabonkTogether.Services
         public void OnPickupOrbSpawned(EPickup ePickup, Vector3 pos);
         public void OnPickupApplied(Pickup instance);
         public void OnSpawnedChest(Vector3 position, Quaternion rotation, UnityEngine.Object obj);
+        public void RequestChestOpen(uint chestId);
+        public bool IsChestPending(uint chestId);
+        public bool IsChestGranted(uint chestId);
         public void OnChestOpened(OpenChest instance);
         public void OnWeaponAdded(WeaponInventory instance, WeaponData weaponData, Il2CppSystem.Collections.Generic.List<StatModifier> upgradeOffer);
         public void OnInteractableUsed(BaseInteractable instance);
@@ -140,11 +143,17 @@ namespace MegabonkTogether.Services
         private readonly ManualLogSource logger;
         private readonly ConcurrentBag<SpawnedObject> toSpawns = [];
         private readonly ConcurrentBag<SpawnedObjectInCrypt> toUpdate = [];
+        private readonly ConcurrentDictionary<uint, int> spawnRetryCount = new();
+        private readonly ConcurrentDictionary<uint, int> updateRetryCount = new();
+        private const int MAX_RETRIES = 5;
         private readonly ConcurrentDictionary<uint, ICollection<uint>> shrineChargingPlayers = new();
         private readonly ConcurrentDictionary<uint, ICollection<uint>> pylonChargingPlayers = new();
         private readonly ConcurrentDictionary<uint, ICollection<uint>> lampsChargingPlayers = [];
+        private readonly ConcurrentDictionary<uint, uint> pickupOwnership = new();
         private readonly List<GameObject> specificDesertGraves = [];
         private InteractableCoffin currentCoffin = null;
+        private readonly HashSet<uint> pendingChestRequests = [];
+        private readonly HashSet<uint> grantedChests = [];
 
         private CancellationTokenSource cancellationTokenSource = new();
         private CancellationToken cancellationToken = default;
@@ -217,6 +226,8 @@ namespace MegabonkTogether.Services
             EventManager.SubscribeTumbleWeedDespawnedEvents(OnReceivedTumbleWeedDespawned);
             EventManager.SubscribeInteractableCharacterFightEnemySpawnedEvents(OnReceivedInteractableFightEnemySpawned);
             EventManager.SubscribeWantToStartFollowingPickupEvents(OnReceivedWantToStartFollowingPickup);
+            EventManager.SubscribeRequestChestOpenEvents(OnReceivedRequestChestOpen);
+            EventManager.SubscribeGrantChestOpenEvents(OnReceivedGrantChestOpen);
             EventManager.SubscribeItemAddedEvents(OnReceivedItemAdded);
             EventManager.SubscribeItemRemovedEvents(OnReceivedItemRemoved);
             EventManager.SubscribeWeaponToggledEvents(OnReceivedWeaponToggled);
@@ -267,9 +278,12 @@ namespace MegabonkTogether.Services
             currentState = State.None;
             toSpawns.Clear();
             toUpdate.Clear();
+            spawnRetryCount.Clear();
+            updateRetryCount.Clear();
 
             shrineChargingPlayers.Clear();
             pylonChargingPlayers.Clear();
+            pickupOwnership.Clear();
             cancellationTokenSource.Cancel();
             cancellationTokenSource = new CancellationTokenSource();
             cancellationToken = cancellationTokenSource.Token;
@@ -367,7 +381,20 @@ namespace MegabonkTogether.Services
                 return false;
             }
 
-            var spawned = HandleSpawn(prefab);
+            var hasShadyGuyRarity = toSpawn.SpecificData != null && toSpawn.SpecificData.ShadyGuyRarity >= 0;
+
+            GameObject spawned;
+            if (hasShadyGuyRarity)
+            {
+                var wasActive = prefab.activeSelf;
+                prefab.SetActive(false);
+                spawned = GameObject.Instantiate(prefab);
+                prefab.SetActive(wasActive);
+            }
+            else
+            {
+                spawned = HandleSpawn(prefab);
+            }
 
             if (spawned == null)
             {
@@ -381,7 +408,7 @@ namespace MegabonkTogether.Services
 
             spawnedObjectManagerService.SetSpawnedObject(toSpawn.Id, spawned);
 
-            if (toSpawn.SpecificData != null && toSpawn.SpecificData.ShadyGuyRarity >= 0)
+            if (hasShadyGuyRarity)
             {
                 var shadyGuy = spawned.GetComponentInChildren<InteractableShadyGuy>();
                 if (shadyGuy != null)
@@ -394,6 +421,7 @@ namespace MegabonkTogether.Services
                 {
                     DynamicData.For(microWave).Set("rarity", (EItemRarity)toSpawn.SpecificData.ShadyGuyRarity);
                 }
+                spawned.SetActive(true);
             }
 
             DynamicData.For(spawned).Set("netplayId", toSpawn.Id);
@@ -731,10 +759,19 @@ namespace MegabonkTogether.Services
                         canSpawn = toSpawns.Count > 0;
                     }
 
-                    foreach (var item in unspawnedYet) //Add back to retry later
+                    foreach (var item in unspawnedYet)
                     {
-                        logger.LogWarning($"Retrying spawn for object: {item.PrefabName}");
-                        toSpawns.Add(item);
+                        var retries = spawnRetryCount.AddOrUpdate(item.Id, 1, (_, c) => c + 1);
+                        if (retries < MAX_RETRIES)
+                        {
+                            logger.LogWarning($"Retrying spawn ({retries}/{MAX_RETRIES}) for object: {item.PrefabName}");
+                            toSpawns.Add(item);
+                        }
+                        else
+                        {
+                            logger.LogError($"Max retries exceeded, discarding object: {item.PrefabName} (id={item.Id})");
+                            spawnRetryCount.TryRemove(item.Id, out _);
+                        }
                     }
 
                     var canUpdate = toUpdate.Count > 0;
@@ -752,10 +789,19 @@ namespace MegabonkTogether.Services
                         canUpdate = toUpdate.Count > 0;
                     }
 
-                    foreach (var item in unupdatedYet) //Add back to retry later
+                    foreach (var item in unupdatedYet)
                     {
-                        logger.LogWarning($"Retrying update for object in crypt at position: x:{item.Position.QuantizedX} y:{item.Position.QuantizedY} z:{item.Position.QuantizedZ}");
-                        toUpdate.Add(item);
+                        var retries = updateRetryCount.AddOrUpdate(item.NetplayId, 1, (_, c) => c + 1);
+                        if (retries < MAX_RETRIES)
+                        {
+                            logger.LogWarning($"Retrying update ({retries}/{MAX_RETRIES}) for object in crypt at position: x:{item.Position.QuantizedX} y:{item.Position.QuantizedY} z:{item.Position.QuantizedZ}");
+                            toUpdate.Add(item);
+                        }
+                        else
+                        {
+                            logger.LogError($"Max retries exceeded, discarding crypt object id={item.NetplayId}");
+                            updateRetryCount.TryRemove(item.NetplayId, out _);
+                        }
                     }
                 }
 
@@ -860,39 +906,73 @@ namespace MegabonkTogether.Services
             if (MapController.currentMap.eMap == Assets.Scripts._Data.MapsAndStages.EMap.Desert) //TODO to test
             {
 
-                if (enemy.enemyData.enemyName == EEnemy.Ghost)
-                {
-                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave1"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
-                }
+                                if (enemy.enemyData.enemyName == EEnemy.Ghost)
 
-                if (enemy.enemyData.enemyName == EEnemy.GreaterGhost)
-                {
-                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave2"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
-                }
+                                {
 
-                if (enemy.enemyData.enemyName == EEnemy.GhostPurple)
-                {
-                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave3"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
-                }
+                                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave1"))?.GetComponent<InteractableDesertGrave>();
 
-                if (enemy.enemyData.enemyName == EEnemy.GhostRed)
-                {
-                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave4"))?.GetComponent<InteractableDesertGrave>();
-                    grave?.myEnemy = enemy;
-                }
+                                    if (grave != null) grave.myEnemy = enemy;
 
-                if (enemy.enemyData.enemyName == EEnemy.CalciumDad)
-                {
-                    InteractableSkeletonKingStatue skeletonStatue = specificDesertGraves.FirstOrDefault(go => go.name.Contains("SkeletonKingStatue"))?.GetComponent<InteractableSkeletonKingStatue>();
-                    if (skeletonStatue == null)
-                    {
-                        logger.LogWarning("SkeletonKingStatue not found for CalciumDad enemy.");
-                    }
-                    skeletonStatue?.myEnemy = enemy;
-                }
+                                }
+
+                
+
+                                if (enemy.enemyData.enemyName == EEnemy.GreaterGhost)
+
+                                {
+
+                                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave2"))?.GetComponent<InteractableDesertGrave>();
+
+                                    if (grave != null) grave.myEnemy = enemy;
+
+                                }
+
+                
+
+                                if (enemy.enemyData.enemyName == EEnemy.GhostPurple)
+
+                                {
+
+                                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave3"))?.GetComponent<InteractableDesertGrave>();
+
+                                    if (grave != null) grave.myEnemy = enemy;
+
+                                }
+
+                
+
+                                if (enemy.enemyData.enemyName == EEnemy.GhostRed)
+
+                                {
+
+                                    InteractableDesertGrave grave = specificDesertGraves.FirstOrDefault(go => go.name.Contains("DesertGrave4"))?.GetComponent<InteractableDesertGrave>();
+
+                                    if (grave != null) grave.myEnemy = enemy;
+
+                                }
+
+                
+
+                                if (enemy.enemyData.enemyName == EEnemy.CalciumDad)
+
+                                {
+
+                                    InteractableSkeletonKingStatue skeletonStatue = specificDesertGraves.FirstOrDefault(go => go.name.Contains("SkeletonKingStatue"))?.GetComponent<InteractableSkeletonKingStatue>();
+
+                                    if (skeletonStatue == null)
+
+                                    {
+
+                                        logger.LogWarning("SkeletonKingStatue not found for CalciumDad enemy.");
+
+                                    }
+
+                
+
+                                    if (skeletonStatue != null) skeletonStatue.myEnemy = enemy;
+
+                                }
             }
 
             if (MapController.currentMap.eMap == Assets.Scripts._Data.MapsAndStages.EMap.Graveyard) //TODO to test
@@ -1445,7 +1525,7 @@ namespace MegabonkTogether.Services
             var isHost = IsServerMode() ?? false;
             if (isHost)
             {
-                udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.Unreliable); //TODO: Can be unreliable i think ?
+                udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
             }
             else
             {
@@ -1500,11 +1580,12 @@ namespace MegabonkTogether.Services
             var isHost = IsServerMode() ?? false;
             if (isHost)
             {
+                udpClientService.RecordEnemyDeath(enemySpawned.Key);
                 udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
             }
             else
             {
-                if (enemy.IsStageBoss() && !enemy.IsFinalBoss()) //Manually invoke boss defeated event client side
+                if (enemy.IsStageBoss() && !enemy.IsFinalBoss())
                 {
                     OnBossDefeated();
                 }
@@ -1673,6 +1754,7 @@ namespace MegabonkTogether.Services
             }
 
             pickupManagerService.RemoveSpawnedPickupById(pickupId);
+            pickupOwnership.TryRemove(pickupId, out _);
             DynamicData.For(instance).Data.Clear();
 
             IGameNetworkMessage message = new PickupApplied
@@ -1768,6 +1850,7 @@ namespace MegabonkTogether.Services
 
             PickupManager.Instance.DespawnPickup(pickup);
             pickupManagerService.RemoveSpawnedPickupById(applied.PickupId);
+            pickupOwnership.TryRemove(applied.PickupId, out _);
         }
 
         private void OnReceivedPickupFollowingPlayer(PickupFollowingPlayer player)
@@ -1837,32 +1920,32 @@ namespace MegabonkTogether.Services
                 return;
             }
 
-            var currentOwnerId = DynamicData.For(pickup).Get<uint?>("ownerId");
-            if (currentOwnerId.HasValue)
+            if (pickupOwnership.TryAdd(pickupId, ownerId))
             {
-                if (currentOwnerId.Value != ownerId)
+                DynamicData.For(pickup).Set("ownerId", ownerId);
+
+                IGameNetworkMessage message = new PickupFollowingPlayer
+                {
+                    PickupId = pickupId,
+                    PlayerId = ownerId
+                };
+
+                udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                OnReceivedPickupFollowingPlayer((PickupFollowingPlayer)message);
+            }
+            else
+            {
+                var currentOwnerId = pickupOwnership[pickupId];
+                if (currentOwnerId != ownerId)
                 {
                     IGameNetworkMessage msg = new PickupFollowingPlayer
                     {
                         PickupId = pickupId,
-                        PlayerId = currentOwnerId.Value
+                        PlayerId = currentOwnerId
                     };
                     udpClientService.SendToAllClients(msg, LiteNetLib.DeliveryMethod.ReliableOrdered);
                 }
-
-                return;
             }
-
-            DynamicData.For(pickup).Set("ownerId", ownerId);
-
-            IGameNetworkMessage message = new PickupFollowingPlayer
-            {
-                PickupId = pickupId,
-                PlayerId = ownerId
-            };
-
-            udpClientService.SendToAllClients(message, LiteNetLib.DeliveryMethod.ReliableOrdered);
-            OnReceivedPickupFollowingPlayer((PickupFollowingPlayer)message);
         }
 
         private void OnReceivedWantToStartFollowingPickup(WantToStartFollowingPickup pickupMessage)
@@ -1911,6 +1994,13 @@ namespace MegabonkTogether.Services
                 logger.LogWarning("Chest not found in ChestManagerService when processing OnChestOpened.");
                 return;
             }
+
+            if (!grantedChests.Remove(chestSpawned.Key))
+            {
+                // If it wasn't in grantedChests, it means we already sent it or it's an illegal open
+                return;
+            }
+
             IGameNetworkMessage message = new ChestOpened
             {
                 ChestId = chestSpawned.Key,
@@ -1939,6 +2029,77 @@ namespace MegabonkTogether.Services
 
             GameObject.DestroyImmediate(chestObject);
             chestManagerService.RemoveChest(opened.ChestId);
+        }
+
+        private void OnReceivedRequestChestOpen(RequestChestOpen request)
+        {
+            if (!(IsServerMode() ?? false)) return;
+
+            if (chestManagerService.TryClaimChest(request.ChestId, request.RequestingPlayerId))
+            {
+                logger.LogInfo($"Chest {request.ChestId} claimed by player {request.RequestingPlayerId}.");
+                IGameNetworkMessage grantMessage = new GrantChestOpen
+                {
+                    ChestId = request.ChestId,
+                    GrantedPlayerId = request.RequestingPlayerId
+                };
+                udpClientService.SendToAllClients(grantMessage, LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+                // Also trigger it locally for the host to maintain consistency
+                OnReceivedGrantChestOpen((GrantChestOpen)grantMessage);
+            }
+            else
+            {
+                var claimant = chestManagerService.GetClaimant(request.ChestId);
+                logger.LogWarning($"Player {request.RequestingPlayerId} tried to claim chest {request.ChestId} but it's already claimed by {claimant}.");
+            }
+        }
+
+        public void RequestChestOpen(uint chestId)
+        {
+            if (pendingChestRequests.Contains(chestId)) return;
+
+            pendingChestRequests.Add(chestId);
+            IGameNetworkMessage message = new RequestChestOpen
+            {
+                ChestId = chestId,
+                RequestingPlayerId = playerManagerService.GetLocalPlayer().ConnectionId
+            };
+
+            if (IsServerMode() ?? false)
+            {
+                OnReceivedRequestChestOpen((RequestChestOpen)message);
+            }
+            else
+            {
+                udpClientService.SendToHost(message);
+            }
+        }
+
+        public bool IsChestPending(uint chestId) => pendingChestRequests.Contains(chestId);
+        public bool IsChestGranted(uint chestId) => grantedChests.Contains(chestId);
+
+        private void OnReceivedGrantChestOpen(GrantChestOpen grant)
+        {
+            logger.LogInfo($"Chest {grant.ChestId} grant received for player {grant.GrantedPlayerId}.");
+
+            pendingChestRequests.Remove(grant.ChestId);
+
+            if (grant.GrantedPlayerId == playerManagerService.GetLocalPlayer().ConnectionId)
+            {
+                grantedChests.Add(grant.ChestId);
+                // The next OnTriggerStay will now pass the prefix check and open the chest.
+            }
+            else
+            {
+                // Another player got it. We destroy the chest locally to prevent further interaction.
+                var chestObject = chestManagerService.GetChest(grant.ChestId);
+                if (chestObject != null)
+                {
+                    GameObject.DestroyImmediate(chestObject);
+                    chestManagerService.RemoveChest(grant.ChestId);
+                }
+            }
         }
 
         public void OnWeaponAdded(WeaponInventory instance, WeaponData weaponData, Il2CppSystem.Collections.Generic.List<StatModifier> upgradeOffer)
@@ -2334,18 +2495,9 @@ namespace MegabonkTogether.Services
                     var shrineChallenge = interactableObj.GetComponent<InteractableShrineChallenge>();
                     if (shrineChallenge != null)
                     {
-                        var isHost = IsServerMode() ?? false;
-                        if (isHost)
-                        {
-                            shrineChallenge.Interact();
-                        }
-                        else
-                        {
-                            shrineChallenge.done = true;
-                            shrineChallenge.fx.SetActive(true);
-                            GameObject.Destroy(shrineChallenge.alertIcon);
-                        }
-
+                        shrineChallenge.done = true;
+                        shrineChallenge.fx.SetActive(true);
+                        GameObject.Destroy(shrineChallenge.alertIcon);
                         break;
                     }
 
@@ -4075,6 +4227,12 @@ namespace MegabonkTogether.Services
             if (netplayer != null)
             {
                 netplayer.Respawn(Quantizer.Dequantize(respawned.Position));
+                var player = playerManagerService.GetPlayer(respawned.OwnerId);
+                if (player != null)
+                {
+                    player.Hp = player.MaxHp;
+                    playerManagerService.UpdatePlayer(player);
+                }
             }
             else
             {

@@ -52,6 +52,8 @@ namespace MegabonkTogether.Services
         private static event Action<TumbleWeedDespawned> TumbleWeedDespawnedEvents;
         private static event Action<InteractableCharacterFightEnemySpawned> InteractableCharacterFightEnemySpawnedEvents;
         private static event Action<WantToStartFollowingPickup> WantToStartFollowingPickupEvents;
+        private static event Action<RequestChestOpen> RequestChestOpenEvents;
+        private static event Action<GrantChestOpen> GrantChestOpenEvents;
         private static event Action<ItemAdded> ItemAddedEvents;
         private static event Action<ItemRemoved> ItemRemovedEvents;
         private static event Action<WeaponToggled> WeaponToggledEvents;
@@ -613,6 +615,32 @@ namespace MegabonkTogether.Services
             MainThreadDispatcher.Enqueue(() =>
             {
                 WantToStartFollowingPickupEvents?.Invoke(wantToStartFollowingPickup);
+            });
+        }
+
+        public static void SubscribeRequestChestOpenEvents(Action<RequestChestOpen> action)
+        {
+            RequestChestOpenEvents += action;
+        }
+
+        public static void OnRequestChestOpen(RequestChestOpen requestChestOpen)
+        {
+            MainThreadDispatcher.Enqueue(() =>
+            {
+                RequestChestOpenEvents?.Invoke(requestChestOpen);
+            });
+        }
+
+        public static void SubscribeGrantChestOpenEvents(Action<GrantChestOpen> action)
+        {
+            GrantChestOpenEvents += action;
+        }
+
+        public static void OnGrantChestOpen(GrantChestOpen grantChestOpen)
+        {
+            MainThreadDispatcher.Enqueue(() =>
+            {
+                GrantChestOpenEvents?.Invoke(grantChestOpen);
             });
         }
 

@@ -7,7 +7,7 @@ namespace MegabonkTogether.Extensions
 {
     public static class ProjectileBaseExtensions
     {
-        public static Projectile ToModel(this ProjectileBase projectile, uint projectileId)
+        public static Projectile ToModel(this ProjectileBase projectile, uint projectileId, Projectile existingModel = null)
         {
             var projectileCringeSword = projectile.GetComponent<ProjectileCringeSword>();
             var projectileHeroSword = projectile.GetComponent<ProjectileHeroSword>();
@@ -33,12 +33,11 @@ namespace MegabonkTogether.Extensions
                 rotation = projectileRocket.rocket.transform.rotation;
             }
 
-            return new Projectile()
-            {
-                Id = projectileId,
-                Position = Quantizer.Quantize(position),
-                FordwardVector = Quantizer.Quantize(rotation * Vector3.forward)
-            };
+            var model = existingModel ?? new Projectile();
+            model.Id = projectileId;
+            model.Position = Quantizer.Quantize(position);
+            model.FordwardVector = Quantizer.Quantize(rotation * Vector3.forward);
+            return model;
         }
     }
 }

@@ -1,9 +1,10 @@
-﻿using Assets.Scripts.Inventory__Items__Pickups.Pickups;
+using Assets.Scripts.Inventory__Items__Pickups.Pickups;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Extensions;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace MegabonkTogether.Services
 {
@@ -22,7 +23,7 @@ namespace MegabonkTogether.Services
     internal class PickupManagerService : IPickupManagerService
     {
         private readonly ConcurrentDictionary<uint, Pickup> spawnedPickups = [];
-        private uint currentPickupId = 0; //TODO: concurrency?
+        private int currentPickupId = -1;
 
         public IEnumerable<PickupModel> GetAllPickups()
         {
@@ -44,14 +45,14 @@ namespace MegabonkTogether.Services
         /// </summary>
         public uint AddSpawnedPickup(Pickup pickup)
         {
-            currentPickupId++;
-            if (!spawnedPickups.TryAdd(currentPickupId, pickup))
+            var pickupId = (uint)Interlocked.Increment(ref currentPickupId);
+            if (!spawnedPickups.TryAdd(pickupId, pickup))
             {
-                Plugin.Log.LogWarning($"Attempted to add an pickup that already exists. PickupId: {currentPickupId}");
+                Plugin.Log.LogWarning($"Attempted to add an pickup that already exists. PickupId: {pickupId}");
                 return 0;
             }
 
-            return currentPickupId;
+            return pickupId;
         }
 
         /// <summary>
@@ -102,7 +103,7 @@ namespace MegabonkTogether.Services
 
         public void ResetForNextLevel()
         {
-            currentPickupId = 0;
+            currentPickupId = -1;
             //spawnedPickups.Select(kv => kv.Value).ToList().ForEach(p => GameObject.Destroy(p.gameObject));
             spawnedPickups.Clear();
         }

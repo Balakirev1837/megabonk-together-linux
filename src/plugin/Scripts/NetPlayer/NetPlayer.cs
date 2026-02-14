@@ -169,7 +169,7 @@ namespace MegabonkTogether.Scripts.NetPlayer
             var snapshot = new PlayerSnapshot
             {
                 Timestamp = Time.timeAsDouble,
-                Position = update.Position.ToUnityVector3(),
+                Position = Quantizer.Dequantize(update.Position),
                 Rotation = GetRotation(update),
                 AnimatorState = update.AnimatorState,
             };

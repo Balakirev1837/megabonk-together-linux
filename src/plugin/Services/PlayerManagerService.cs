@@ -367,7 +367,7 @@ namespace MegabonkTogether.Services
 
             return new PlayerUpdate
             {
-                Position = position.ToNumericsVector3(),
+                Position = Quantizer.Quantize(position),
                 MovementState = new()
                 {
                     AxisInput = Quantizer.Quantize(axisInput),

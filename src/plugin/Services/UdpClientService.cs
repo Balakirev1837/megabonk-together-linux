@@ -1,4 +1,5 @@
-﻿using Assets.Scripts.Inventory__Items__Pickups.Items;
+using Assets.Scripts.Actors;
+using Assets.Scripts.Inventory__Items__Pickups.Items;
 using Assets.Scripts.Managers;
 using BepInEx.Logging;
 using LiteNetLib;
@@ -70,6 +71,7 @@ namespace MegabonkTogether.Services
         public bool HasHandledHost();
         public void ResetHandledHost();
         public void RemovePeer(uint clientConnectionId);
+        public void RecordEnemyDeath(uint enemyId);
     }
     internal class UdpClientService : IUdpClientService
     {
@@ -108,8 +110,12 @@ namespace MegabonkTogether.Services
         private bool hasTriedForceRelay = false;
 
         private const int POLL_INTERVAL_MS = 5;
+        private const int DEATH_RETENTION_SECONDS = 3;
 
+        private readonly ConcurrentDictionary<uint, DateTime> recentEnemyDeaths = new();
         private CancellationTokenSource pollingCancelationTokenSource;
+
+        private readonly INetworkMonitorService networkMonitorService;
 
         public UdpClientService(
             IPlayerManagerService playerManagerService,
@@ -117,6 +123,7 @@ namespace MegabonkTogether.Services
             IProjectileManagerService projectileManagerService,
             IFinalBossOrbManagerService finalBossOrbManagerService,
             ISpawnedObjectManagerService spawnedObjectManagerService,
+            INetworkMonitorService networkMonitorService,
             ManualLogSource logger)
         {
             this.playerManagerService = playerManagerService;
@@ -124,6 +131,7 @@ namespace MegabonkTogether.Services
             this.projectileManagerService = projectileManagerService;
             this.finalBossOrbManagerService = finalBossOrbManagerService;
             this.spawnedObjectManagerService = spawnedObjectManagerService;
+            this.networkMonitorService = networkMonitorService;
             this.logger = logger;
         }
 
@@ -272,10 +280,15 @@ namespace MegabonkTogether.Services
                     try
                     {
                         deserializedMsg = MemoryPackSerializer.Deserialize<IGameNetworkMessage>(data);
+                        if (deserializedMsg != null)
+                        {
+                            networkMonitorService.RecordPacketReceived(data.Length, deserializedMsg.GetType().Name);
+                            logger.LogDebug($"[NetIntegrity] Received {data.Length} bytes from {peer.Id} (Type: {deserializedMsg.GetType().Name})");
+                        }
                     }
                     catch (MemoryPackSerializationException)
                     {
-                        logger.LogDebug($"Corrupted packet from {peer.Address}, discarding");
+                        logger.LogDebug($"Corrupted packet from {peer.Address} (Size: {data.Length} bytes), discarding");
                         return;
                     }
 
@@ -321,6 +334,7 @@ namespace MegabonkTogether.Services
                 {
                     peerIntro.Value.Latency = latency;
                     gamePeersIntroduced[peerIntro.Key] = peerIntro.Value;
+                    networkMonitorService.RecordLatency(peerIntro.Value.ConnectionId, latency);
                 }
             };
 
@@ -628,6 +642,9 @@ namespace MegabonkTogether.Services
                     case ChestOpened chestOpened:
                         EventManager.OnChestOpened(chestOpened);
                         break;
+                    case GrantChestOpen grantChestOpen:
+                        EventManager.OnGrantChestOpen(grantChestOpen);
+                        break;
                     case WeaponAdded weaponAdded:
                         EventManager.OnWeaponAdded(weaponAdded);
                         break;
@@ -812,7 +829,7 @@ namespace MegabonkTogether.Services
                             return;
                         }
 
-                        playerToUpdate.Position = Quantizer.Quantize(playerUpdate.Position.ToUnityVector3());
+                        playerToUpdate.Position = playerUpdate.Position;
                         playerToUpdate.MovementState = playerUpdate.MovementState;
                         playerToUpdate.AnimatorState = playerUpdate.AnimatorState;
                         playerToUpdate.ConnectionId = playerUpdate.ConnectionId;
@@ -824,7 +841,10 @@ namespace MegabonkTogether.Services
                         playerToUpdate.MaxHp = playerUpdate.MaxHp;
                         playerToUpdate.MaxShield = playerUpdate.MaxShield;
                         //playerToUpdate.Xp = playerUpdate.Xp;
-                        playerToUpdate.Inventory = playerUpdate.Inventory;
+                        if (playerUpdate.Inventory != null)
+                        {
+                            playerToUpdate.Inventory = playerUpdate.Inventory;
+                        }
                         playerToUpdate.Name = playerUpdate.Name;
 
                         playerManagerService.UpdatePlayer(playerToUpdate);
@@ -943,6 +963,13 @@ namespace MegabonkTogether.Services
                     case WantToStartFollowingPickup wantToStartFollowingPickup:
                         EventManager.OnWantToStartFollowingPickup(wantToStartFollowingPickup);
                         break;
+                    case RequestChestOpen requestChestOpen:
+                        EventManager.OnRequestChestOpen(requestChestOpen);
+                        break;
+                    case GrantChestOpen grantChestOpen:
+                        EventManager.OnGrantChestOpen(grantChestOpen);
+                        SendToAllClientsExcept(netPeerId, grantChestOpen.GrantedPlayerId, grantChestOpen);
+                        break;
                     case ItemAdded itemAdded:
                         EventManager.OnItemAdded(itemAdded);
                         SendToAllClientsExcept(netPeerId, itemAdded.OwnerId, itemAdded);
@@ -1007,6 +1034,7 @@ namespace MegabonkTogether.Services
             gamePeersIntroduced.Clear();
             gamePeersIntroducedByRelay.Clear();
             hasTriedForceRelay = false;
+            recentEnemyDeaths.Clear();
 
             lock (relayPeerLock)
             {
@@ -1040,7 +1068,7 @@ namespace MegabonkTogether.Services
 
                     var playerUpdate = new PlayerUpdate
                     {
-                        Position = Quantizer.Dequantize(player.Position).ToNumericsVector3(),
+                        Position = player.Position,
                         MovementState = player.MovementState,
                         AnimatorState = player.AnimatorState,
                         ConnectionId = player.ConnectionId,
@@ -1064,6 +1092,20 @@ namespace MegabonkTogether.Services
 
             EventManager.OnEnemiesUpdate(lobbyUpdate.Enemies);
             EventManager.OnFinalBossOrbsUpdate(lobbyUpdate.BossOrbs);
+
+            foreach (var deadEnemyId in lobbyUpdate.RecentDeaths)
+            {
+                var enemy = enemyManagerService.GetEnemyById(deadEnemyId);
+                if (enemy != null && enemy.hp > 0)
+                {
+                    logger.LogInfo($"Cleaning up zombie enemy {deadEnemyId} from RecentDeaths");
+                    var damageContainer = new DamageContainer(enemy.hp + 1, "");
+                    Plugin.CAN_SEND_MESSAGES = false;
+                    enemy.EnemyDied(damageContainer);
+                    Plugin.CAN_SEND_MESSAGES = true;
+                    enemyManagerService.RemoveEnemyById(deadEnemyId);
+                }
+            }
         }
 
         public async Task<bool> HandleMatch(MatchInfo matchInfo, uint selfConnectionId, string rdvServerHost, uint rdvServerPort)
@@ -1343,7 +1385,7 @@ namespace MegabonkTogether.Services
                 return;
             }
 
-            player.Position = Quantizer.Quantize(localPlayer.Position.ToUnityVector3());
+            player.Position = localPlayer.Position;
             player.MovementState = localPlayer.MovementState;
             player.AnimatorState = localPlayer.AnimatorState;
             player.Hp = localPlayer.Hp;
@@ -1380,10 +1422,11 @@ namespace MegabonkTogether.Services
 
         private void SendEnemiesUpdate()
         {
+            CleanupStaleDeaths();
             var enemies = enemyManagerService.GetAllEnemiesDeltaAndUpdate();
-            var bossFinalOrb = finalBossOrbManagerService.GetAllOrbs();
+            var bossFinalOrb = finalBossOrbManagerService.GetAllOrbsDeltaAndUpdate();
 
-            if (!enemies.Any() && !bossFinalOrb.Any())
+            if (!enemies.Any() && !bossFinalOrb.Any() && recentEnemyDeaths.IsEmpty)
             {
                 return;
             }
@@ -1392,6 +1435,7 @@ namespace MegabonkTogether.Services
             {
                 Enemies = enemies,
                 BossOrbs = bossFinalOrb,
+                RecentDeaths = recentEnemyDeaths.Keys.ToList()
             };
 
             byte[] serialized = MemoryPackSerializer.Serialize<IGameNetworkMessage>(message);
@@ -1466,6 +1510,7 @@ namespace MegabonkTogether.Services
             }
 
             var msgBytes = MemoryPackSerializer.Serialize<IGameNetworkMessage>(data);
+            networkMonitorService.RecordPacketSent(msgBytes.Length, data.GetType().Name);
 
             if (usesRelay.Any())
             {
@@ -1503,6 +1548,7 @@ namespace MegabonkTogether.Services
             }
 
             var msgBytes = MemoryPackSerializer.Serialize<IGameNetworkMessage>(data);
+            networkMonitorService.RecordPacketSent(msgBytes.Length, data.GetType().Name);
 
             var deliveryMethod = DeliveryMethod.ReliableSequenced;
 
@@ -1780,6 +1826,23 @@ namespace MegabonkTogether.Services
         public void ResetHandledHost()
         {
             hasHandledHost = false;
+        }
+
+        public void RecordEnemyDeath(uint enemyId)
+        {
+            recentEnemyDeaths[enemyId] = DateTime.UtcNow;
+        }
+
+        private void CleanupStaleDeaths()
+        {
+            var cutoff = DateTime.UtcNow.AddSeconds(-DEATH_RETENTION_SECONDS);
+            foreach (var kvp in recentEnemyDeaths)
+            {
+                if (kvp.Value < cutoff)
+                {
+                    recentEnemyDeaths.TryRemove(kvp.Key, out _);
+                }
+            }
         }
     }
 }

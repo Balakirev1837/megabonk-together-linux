@@ -1,11 +1,13 @@
-﻿using Assets.Scripts.Inventory__Items__Pickups.Weapons.Projectiles;
+using Assets.Scripts.Inventory__Items__Pickups.Weapons.Projectiles;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Extensions;
 using MegabonkTogether.Helpers;
 using MegabonkTogether.Scripts.Snapshot;
+using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 
 namespace MegabonkTogether.Services
@@ -29,8 +31,8 @@ namespace MegabonkTogether.Services
     internal class ProjectileManagerService : IProjectileManagerService
     {
         private readonly ConcurrentDictionary<uint, ProjectileBase> spawnedProjectile = [];
-        private List<Projectile> previousSpawnedProjectilesDelta = [];
-        private uint currentProjectileId = 0;
+        private readonly ConcurrentDictionary<uint, Projectile> previousSpawnedProjectilesDelta = [];
+        private int currentProjectileId = -1;
         private ProjectileInterpolator projectileInterpolator;
 
         private const float POSITION_THRESHOLD = 0.05f;
@@ -43,27 +45,44 @@ namespace MegabonkTogether.Services
 
         public IEnumerable<Projectile> GetAllProjectilesDeltaAndUpdate()
         {
-            var currentProjectiles = spawnedProjectile.Select(kv => kv.Value.ToModel(kv.Key)).ToList();
-
-            if (previousSpawnedProjectilesDelta.Count == 0)
-            {
-                previousSpawnedProjectilesDelta = [.. currentProjectiles];
-                return currentProjectiles;
-            }
-
             var deltas = new List<Projectile>();
+            var currentIds = new HashSet<uint>();
 
-            foreach (var current in currentProjectiles)
+            foreach (var kv in spawnedProjectile)
             {
-                var previous = previousSpawnedProjectilesDelta.FirstOrDefault(p => p.Id == current.Id);
+                var id = kv.Key;
+                var projectileBase = kv.Value;
 
-                if (previous == null || HasDelta(previous, current))
+                if (projectileBase == null) continue;
+
+                currentIds.Add(id);
+                
+                // Get or create cached model
+                if (!previousSpawnedProjectilesDelta.TryGetValue(id, out var previousModel))
                 {
-                    deltas.Add(current);
+                    // New projectile
+                    var newModel = projectileBase.ToModel(id);
+                    previousSpawnedProjectilesDelta.TryAdd(id, newModel);
+                    deltas.Add(newModel);
+                }
+                else
+                {
+                    // Existing projectile, check for delta
+                    var currentModel = projectileBase.ToModel(id);
+                    if (HasDelta(previousModel, currentModel))
+                    {
+                        previousModel.UpdateFrom(currentModel);
+                        deltas.Add(currentModel);
+                    }
                 }
             }
 
-            previousSpawnedProjectilesDelta = currentProjectiles.ToList();
+            // Cleanup removed projectiles from cache
+            var keysToRemove = previousSpawnedProjectilesDelta.Keys.Where(id => !currentIds.Contains(id)).ToList();
+            foreach (var key in keysToRemove)
+            {
+                previousSpawnedProjectilesDelta.TryRemove(key, out _);
+            }
 
             return deltas;
         }
@@ -93,19 +112,20 @@ namespace MegabonkTogether.Services
             foreach (var id in toRemove)
             {
                 spawnedProjectile.TryRemove(id, out var _);
+                previousSpawnedProjectilesDelta.TryRemove(id, out var _);
             }
         }
 
         public uint AddSpawnedProjectile(ProjectileBase projectile)
         {
-            currentProjectileId++;
-            if (!spawnedProjectile.TryAdd(currentProjectileId, projectile))
+            var projectileId = (uint)Interlocked.Increment(ref currentProjectileId);
+            if (!spawnedProjectile.TryAdd(projectileId, projectile))
             {
-                Plugin.Log.LogWarning($"Attempted to add a projectile that already exists. Id: {currentProjectileId}");
+                Plugin.Log.LogWarning($"Attempted to add a projectile that already exists. Id: {projectileId}");
                 return 0;
             }
 
-            return currentProjectileId;
+            return projectileId;
         }
 
         public KeyValuePair<uint, ProjectileBase> GetProjectileByReference(ProjectileBase projectile)
@@ -115,6 +135,7 @@ namespace MegabonkTogether.Services
 
         public ProjectileBase RemoveProjectileById(uint id)
         {
+            previousSpawnedProjectilesDelta.TryRemove(id, out var _);
             if (!spawnedProjectile.TryRemove(id, out var projectile))
             {
                 Plugin.Log.LogWarning($"Attempted to remove an projectile that does not exist {id}");
@@ -126,7 +147,7 @@ namespace MegabonkTogether.Services
 
         public void ResetForNextLevel()
         {
-            currentProjectileId = 0;
+            currentProjectileId = -1;
             spawnedProjectile.Clear();
             previousSpawnedProjectilesDelta.Clear();
 
@@ -177,7 +198,11 @@ namespace MegabonkTogether.Services
         public void RemoveProjectilesByOwnerId(uint connectionId)
         {
             var projectilesToRemove = spawnedProjectile
-                .Where(kv => kv.Value != null && kv.Key == connectionId)
+                .Where(kv => {
+                    if (kv.Value == null || kv.Value.weaponBase == null) return false;
+                    var netPlayer = Plugin.Services.GetRequiredService<IPlayerManagerService>().GetNetPlayerByWeapon(kv.Value.weaponBase);
+                    return netPlayer != null && netPlayer.ConnectionId == connectionId;
+                })
                 .Select(kv => kv.Key)
                 .ToList();
 

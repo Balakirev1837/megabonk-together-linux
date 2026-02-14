@@ -1,9 +1,10 @@
-﻿using MegabonkTogether.Common.Models;
+using MegabonkTogether.Common.Models;
 using MegabonkTogether.Helpers;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 
 namespace MegabonkTogether.Services
@@ -21,6 +22,7 @@ namespace MegabonkTogether.Services
 
         public void Reset();
         public IEnumerable<BossOrbModel> GetAllOrbs();
+        public IEnumerable<BossOrbModel> GetAllOrbsDeltaAndUpdate();
         public GameObject GetOrbById(uint id);
         public uint? GetTargetIdByReference(GameObject go);
 
@@ -37,9 +39,12 @@ namespace MegabonkTogether.Services
         }
 
         private readonly ConcurrentDictionary<uint, OrbInfo> _orbsById = [];
+        private readonly ConcurrentDictionary<uint, BossOrbModel> _previousOrbsDelta = [];
         private readonly ConcurrentQueue<uint> _queuedTargetIds = [];
         private readonly ConcurrentQueue<(uint targetId, uint orbId)> _pendingOrbCreation = [];
-        private uint _nextOrbId = 0;
+        private int _nextOrbId = 0;
+
+        private const float POSITION_THRESHOLD = 0.1f;
 
         public void QueueNextTarget(uint targetId)
         {
@@ -60,7 +65,7 @@ namespace MegabonkTogether.Services
             if (!_queuedTargetIds.TryPeek(out var targetId))
                 return null;
 
-            var orbId = ++_nextOrbId;
+            var orbId = (uint)Interlocked.Increment(ref _nextOrbId);
             _pendingOrbCreation.Enqueue((targetId, orbId));
             return Tuple.Create(targetId, orbId);
         }
@@ -92,6 +97,7 @@ namespace MegabonkTogether.Services
         public void Reset()
         {
             _orbsById.Clear();
+            _previousOrbsDelta.Clear();
             _queuedTargetIds.Clear();
             _pendingOrbCreation.Clear();
             _nextOrbId = 0;
@@ -113,6 +119,58 @@ namespace MegabonkTogether.Services
                 });
         }
 
+        public IEnumerable<BossOrbModel> GetAllOrbsDeltaAndUpdate()
+        {
+            var deltas = new List<BossOrbModel>();
+            var currentIds = new HashSet<uint>();
+
+            foreach (var kv in _orbsById)
+            {
+                var id = kv.Key;
+                var orbInfo = kv.Value;
+
+                if (orbInfo.GameObject == null) continue;
+
+                currentIds.Add(id);
+
+                var currentModel = new BossOrbModel
+                {
+                    Id = id,
+                    Position = Quantizer.Quantize(orbInfo.GameObject.transform.position)
+                };
+
+                if (!_previousOrbsDelta.TryGetValue(id, out var previousModel))
+                {
+                    _previousOrbsDelta.TryAdd(id, currentModel);
+                    deltas.Add(currentModel);
+                }
+                else if (HasDelta(previousModel, currentModel))
+                {
+                    previousModel.UpdateFrom(currentModel);
+                    deltas.Add(currentModel);
+                }
+            }
+
+            // Cleanup
+            var keysToRemove = _previousOrbsDelta.Keys.Where(id => !currentIds.Contains(id)).ToList();
+            foreach (var key in keysToRemove)
+            {
+                _previousOrbsDelta.TryRemove(key, out _);
+            }
+
+            return deltas;
+        }
+
+        private bool HasDelta(BossOrbModel previous, BossOrbModel current)
+        {
+            float positionDelta = Vector3.Distance(
+                Quantizer.Dequantize(previous.Position),
+                Quantizer.Dequantize(current.Position)
+            );
+
+            return positionDelta > POSITION_THRESHOLD;
+        }
+
         public GameObject GetOrbById(uint id)
         {
             return _orbsById.TryGetValue(id, out var orb) ? orb.GameObject : null;
@@ -126,6 +184,7 @@ namespace MegabonkTogether.Services
                 return null;
 
             _orbsById.TryRemove(orbToRemove.Key, out _);
+            _previousOrbsDelta.TryRemove(orbToRemove.Key, out _);
             return orbToRemove.Key;
         }
 

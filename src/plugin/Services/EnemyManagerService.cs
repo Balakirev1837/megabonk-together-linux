@@ -1,4 +1,4 @@
-﻿using Actors.Enemies;
+using Actors.Enemies;
 using Assets.Scripts.Actors.Enemies;
 using MegabonkTogether.Common.Models;
 using MegabonkTogether.Extensions;
@@ -8,6 +8,7 @@ using MonoMod.Utils;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 
 namespace MegabonkTogether.Services
@@ -37,9 +38,9 @@ namespace MegabonkTogether.Services
         private ConcurrentBag<EnemyModel> previousSpawnedEnemiesDelta = [];
         private readonly ConcurrentDictionary<Enemy, string> reviverEnemies_NetplayNames = [];
         private readonly ConcurrentDictionary<uint, int> reviverSpawnCountPerOwner = [];
-        private uint currentEnemyId = 0; //TODO: concurrency?
+        private int currentEnemyId = -1;
 
-        private const float POSITION_TRESHOLD = 0.1f;
+        private const float POSITION_TRESHOLD = 0.25f;
         private const float YAW_TRESHOLD = 5.0f;
         private const ushort HP_TRESHOLD = 1;
 
@@ -160,14 +161,14 @@ namespace MegabonkTogether.Services
         /// </summary>
         public uint AddSpawnedEnemy(Enemy enemy)
         {
-            currentEnemyId++;
-            if (!spawnedEnemies.TryAdd(currentEnemyId, enemy))
+            var enemyId = (uint)Interlocked.Increment(ref currentEnemyId);
+            if (!spawnedEnemies.TryAdd(enemyId, enemy))
             {
-                Plugin.Log.LogWarning($"Attempted to add an enemy that already exists. EnemyId: {currentEnemyId}");
+                Plugin.Log.LogWarning($"Attempted to add an enemy that already exists. EnemyId: {enemyId}");
                 return 0;
             }
 
-            return currentEnemyId;
+            return enemyId;
         }
 
         /// <summary>
@@ -196,7 +197,7 @@ namespace MegabonkTogether.Services
 
         public void ResetForNextLevel()
         {
-            currentEnemyId = 0;
+            currentEnemyId = -1;
             //spawnedEnemies.Select(Enemy => Enemy.Value).ToList().ForEach(enemy => GameObject.Destroy(enemy.gameObject));
             spawnedEnemies.Clear();
             previousSpawnedEnemiesDelta.Clear();
@@ -282,5 +283,6 @@ namespace MegabonkTogether.Services
         {
             reviverSpawnCountPerOwner.Clear();
         }
+
     }
 }

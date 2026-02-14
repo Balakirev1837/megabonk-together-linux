@@ -1,4 +1,4 @@
-﻿using Assets.Scripts.Game.MapGeneration.MapEvents;
+using Assets.Scripts.Game.MapGeneration.MapEvents;
 using Assets.Scripts.Inventory__Items__Pickups;
 using Assets.Scripts.Inventory__Items__Pickups.Items;
 using Assets.Scripts.Inventory__Items__Pickups.Stats;
@@ -151,6 +151,7 @@ namespace MegabonkTogether
                 services.AddSingleton<IGameBalanceService, GameBalanceService>();
                 services.AddSingleton<IAutoUpdaterService, AutoUpdaterService>();
                 services.AddSingleton<IChangelogService, ChangelogService>();
+                services.AddSingleton<INetworkMonitorService, NetworkMonitorService>();
             });
 
             Host = builder.Build();

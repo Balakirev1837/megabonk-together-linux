@@ -8,5 +8,11 @@ namespace MegabonkTogether.Common.Models
         public uint Id { get; set; }
 
         public QuantizedVector3 Position = new();
+
+        public void UpdateFrom(BossOrbModel other)
+        {
+            Id = other.Id;
+            Position = other.Position;
+        }
     }
 }

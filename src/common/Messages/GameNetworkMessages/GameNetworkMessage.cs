@@ -68,6 +68,8 @@ namespace MegabonkTogether.Common.Messages
     [MemoryPackUnion(61, typeof(SpawnedSniperProjectile))]
     [MemoryPackUnion(62, typeof(SpawnedReviver))]
     [MemoryPackUnion(63, typeof(PlayerRespawned))]
+    [MemoryPackUnion(64, typeof(RequestChestOpen))]
+    [MemoryPackUnion(65, typeof(GrantChestOpen))]
     public partial interface IGameNetworkMessage
     {
 
