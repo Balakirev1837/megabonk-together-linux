@@ -1,6 +1,14 @@
+param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Debug",
+    [switch]$Clean,
+    [switch]$Restore
+)
+
 $ErrorActionPreference = "Stop"
 
 Write-Host "Building Megabonk Together for Windows..." -ForegroundColor Cyan
+Write-Host "Configuration: $Configuration" -ForegroundColor Cyan
 
 # Determine game path
 $GamePath = $env:MEGABONK_PATH
@@ -47,9 +55,29 @@ if (-not (Test-Path $PropsFile)) {
     $PropsContent | Out-File -FilePath $PropsFile -Encoding utf8
 }
 
+# Clean if requested
+if ($Clean) {
+    Write-Host "Cleaning build artifacts..." -ForegroundColor Yellow
+    dotnet clean -c $Configuration
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Clean failed with exit code $LASTEXITCODE" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
+# Restore if requested
+if ($Restore) {
+    Write-Host "Restoring packages..." -ForegroundColor Yellow
+    dotnet restore
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Restore failed with exit code $LASTEXITCODE" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
 # Build the project
-Write-Host "Running dotnet build..." -ForegroundColor Yellow
-dotnet build
+Write-Host "Running dotnet build ($Configuration)..." -ForegroundColor Yellow
+dotnet build -c $Configuration
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build complete!" -ForegroundColor Green
