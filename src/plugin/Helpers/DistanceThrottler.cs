@@ -15,7 +15,52 @@ namespace MegabonkTogether.Helpers
             return ShouldUpdate(gameObject, instanceId, distance, isServer);
         }
 
+        public bool ShouldUpdateLogic(GameObject gameObject, int instanceId)
+        {
+            DistanceToPlayer distance = Plugin.GetDistanceToPlayer(gameObject.transform.position);
+            return distance != DistanceToPlayer.Far;
+        }
+
+        public bool ShouldUpdateVisual(GameObject gameObject, int instanceId, bool isServer = false)
+        {
+            DistanceToPlayer distance = Plugin.GetDistanceToPlayer(gameObject.transform.position);
+            return ShouldUpdateVisual(gameObject, instanceId, distance, isServer);
+        }
+
         private bool ShouldUpdate(GameObject gameObject, int instanceId, DistanceToPlayer distance, bool isServer = false)
+        {
+            switch (distance)
+            {
+                case DistanceToPlayer.Far:
+                    SetRendererEnabled(gameObject, false, instanceId);
+                    return isServer;
+
+                case DistanceToPlayer.Medium:
+                    SetRendererEnabled(gameObject, true, instanceId);
+
+                    if (isServer)
+                    {
+                        return true;
+                    }
+
+                    float currentTime = Time.time;
+                    if (!lastUpdateTimes.TryGetValue(instanceId, out float lastTime) ||
+                        currentTime - lastTime >= mediumDistanceUpdateInterval)
+                    {
+                        lastUpdateTimes[instanceId] = currentTime;
+                        return true;
+                    }
+
+                    return false;
+
+                case DistanceToPlayer.Close:
+                default:
+                    SetRendererEnabled(gameObject, true, instanceId);
+                    return true;
+            }
+        }
+
+        private bool ShouldUpdateVisual(GameObject gameObject, int instanceId, DistanceToPlayer distance, bool isServer = false)
         {
             switch (distance)
             {
