@@ -44,10 +44,22 @@ GAME_PATH="${MEGABONK_PATH:-$HOME/.local/share/Steam/steamapps/common/Megabonk}"
 
 echo "Using game path: $GAME_PATH"
 
-# Create Directory.Build.props if it doesn't exist to override the path
-if [ ! -f "Directory.Build.props" ]; then
-    echo "Creating Directory.Build.props..."
-    cat > Directory.Build.props <<EOF
+# Create or update Directory.Build.props
+PROPS_FILE="Directory.Build.props"
+NEEDS_UPDATE=false
+
+if [ ! -f "$PROPS_FILE" ]; then
+    NEEDS_UPDATE=true
+else
+    if ! grep -q "$GAME_PATH" "$PROPS_FILE"; then
+        echo "Path mismatch detected, updating $PROPS_FILE..."
+        NEEDS_UPDATE=true
+    fi
+fi
+
+if [ "$NEEDS_UPDATE" = true ]; then
+    echo "Creating $PROPS_FILE..."
+    cat > "$PROPS_FILE" <<EOF
 <Project>
   <PropertyGroup>
     <MegabonkPath>$GAME_PATH</MegabonkPath>

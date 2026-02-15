@@ -39,9 +39,21 @@ if (-not $GamePath) {
 
 Write-Host "Using game path: $GamePath" -ForegroundColor Green
 
-# Create Directory.Build.props if it doesn't exist
+# Create or update Directory.Build.props
 $PropsFile = "Directory.Build.props"
+$NeedsUpdate = $false
+
 if (-not (Test-Path $PropsFile)) {
+    $NeedsUpdate = $true
+} else {
+    $ExistingContent = Get-Content $PropsFile -Raw
+    if (-not ($ExistingContent -match [regex]::Escape($GamePath))) {
+        Write-Host "Path mismatch detected, updating $PropsFile..." -ForegroundColor Yellow
+        $NeedsUpdate = $true
+    }
+}
+
+if ($NeedsUpdate) {
     Write-Host "Creating $PropsFile..." -ForegroundColor Yellow
     
     $PropsContent = @"
